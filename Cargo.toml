@@ -1,0 +1,11 @@
+[package]
+name = "donetsk"
+version = "0.1.0"
+authors = ["tsrapnik <yannick-peeters@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+vulkano = "0.16"
+vulkano-shaders = "0.16"
+vulkano-win = "0.16"
+winit = "0.19"
