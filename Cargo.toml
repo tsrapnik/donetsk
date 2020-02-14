@@ -5,7 +5,9 @@ authors = ["tsrapnik <yannick-peeters@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-vulkano = "0.16"
-vulkano-shaders = "0.16"
-vulkano-win = "0.16"
+vulkano = "0.13"
+vulkano-shaders = "0.13"
+vulkano-win = "0.13"
 winit = "0.19"
+vulkano_text = "0.11.0"
+petgraph = "0.4.13"
