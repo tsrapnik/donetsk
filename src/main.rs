@@ -95,9 +95,13 @@ void main() {
 }
 
 fn pixel_to_screen_coordinates(position: &[f32; 2], window_dimensions: &[f32; 2]) -> [f32; 2] {
-    let x = 2.0 * (position[0] as f32) / (window_dimensions[0] as f32) - 1.0;
-    let y = 2.0 * (position[1] as f32) / (window_dimensions[1] as f32) - 1.0;
-    [x, y]
+    let wrapped_result: Vec<f32> = position
+        .iter()
+        .zip(window_dimensions)
+        .map(|(p, w)| 2.0 * p / w - 1.0)
+        .collect();
+
+    [wrapped_result[0], wrapped_result[1]]
 }
 
 fn draw_folder(
@@ -108,7 +112,13 @@ fn draw_folder(
     vertex_buffer: &mut Vec<Vertex>,
     window_dimensions: [f32; 2],
 ) {
-    text_buffer.queue_text(position[0], position[1], size[1] * 0.3, [0.6, 0.6, 0.6, 1.0], title);
+    text_buffer.queue_text(
+        position[0],
+        position[1],
+        size[1] * 0.3,
+        [0.6, 0.6, 0.6, 1.0],
+        title,
+    );
 
     [
         [position[0], position[1]],
@@ -125,10 +135,6 @@ fn draw_folder(
 }
 
 fn main() {
-    let x = Folder {
-        height: 0,
-        width: 0,
-    };
     let extensions = vulkano_win::required_extensions();
     let instance = Instance::new(None, &extensions, None).unwrap();
 
@@ -228,12 +234,7 @@ fn main() {
             .unwrap(),
     );
 
-    // CREATE DRAWTEXT
     let mut draw_text = DrawText::new(device.clone(), queue.clone(), swapchain.clone(), &images);
-
-    let (width, _): (u32, u32) = surface.window().get_inner_size().unwrap().into();
-    let mut x = -200.0;
-    // CREATE DRAWTEXT END
 
     let mut recreate_swapchain = false;
     let mut previous_frame_end = Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>;
