@@ -8,29 +8,42 @@ use vulkano_text::{DrawText, DrawTextTrait};
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::device::{Device, DeviceExtensions};
-use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPassAbstract};
+use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::SwapchainImage;
 use vulkano::instance::{Instance, PhysicalDevice};
-use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError};
+use vulkano::pipeline::GraphicsPipeline;
 use vulkano::swapchain;
-use vulkano::sync::{GpuFuture, FlushError};
+use vulkano::swapchain::{
+    AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError,
+};
 use vulkano::sync;
+use vulkano::sync::{FlushError, GpuFuture};
 
 use vulkano_win::VkSurfaceBuild;
 
-use winit::{EventsLoop, Window, WindowBuilder, Event, WindowEvent};
+use winit::{Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
 use std::sync::Arc;
 
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::Bfs;
 
+struct Folder {
+    height: u32,
+    width: u32,
+}
+
 #[derive(Debug)]
 struct Node {
     name: String,
 }
+
+#[derive(Default, Debug, Clone)]
+struct Vertex {
+    position: [f32; 2],
+}
+vulkano::impl_vertex!(Vertex, position);
 
 fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
     let path = &a_graph[a_node_index].name;
@@ -54,7 +67,7 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
 }
 
 mod vs {
-    vulkano_shaders::shader!{
+    vulkano_shaders::shader! {
         ty: "vertex",
         src: "
 #version 450
@@ -68,7 +81,7 @@ void main() {
 }
 
 mod fs {
-    vulkano_shaders::shader!{
+    vulkano_shaders::shader! {
         ty: "fragment",
         src: "
 #version 450
@@ -76,29 +89,78 @@ mod fs {
 layout(location = 0) out vec4 f_color;
 
 void main() {
-    f_color = vec4(1.0, 0.0, 0.0, 1.0);
+    f_color = vec4(0.3, 0.2, 0.2, 1.0);
 }"
     }
 }
 
+fn pixel_to_screen_coordinates(position: &[f32; 2], window_dimensions: &[f32; 2]) -> [f32; 2] {
+    let x = 2.0 * (position[0] as f32) / (window_dimensions[0] as f32) - 1.0;
+    let y = 2.0 * (position[1] as f32) / (window_dimensions[1] as f32) - 1.0;
+    [x, y]
+}
+
+fn draw_folder(
+    title: &str,
+    position: [f32; 2],
+    size: [f32; 2],
+    text_buffer: &mut DrawText,
+    vertex_buffer: &mut Vec<Vertex>,
+    window_dimensions: [f32; 2],
+) {
+    text_buffer.queue_text(position[0], position[1], size[1] * 0.3, [0.6, 0.6, 0.6, 1.0], title);
+
+    [
+        [position[0], position[1]],
+        [position[0] + size[0], position[1]],
+        [position[0], position[1] - size[1]],
+        [position[0], position[1] - size[1]],
+        [position[0] + size[0], position[1]],
+        [position[0] + size[0], position[1] - size[1]],
+    ]
+    .iter()
+    .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
+    .map(|x| vertex_buffer.push(Vertex { position: x }))
+    .count();
+}
+
 fn main() {
+    let x = Folder {
+        height: 0,
+        width: 0,
+    };
     let extensions = vulkano_win::required_extensions();
     let instance = Instance::new(None, &extensions, None).unwrap();
 
     let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
-    println!("Using device: {} (type: {:?})", physical.name(), physical.ty());
+    println!(
+        "Using device: {} (type: {:?})",
+        physical.name(),
+        physical.ty()
+    );
 
     let mut events_loop = EventsLoop::new();
-    let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
+    let surface = WindowBuilder::new()
+        .build_vk_surface(&events_loop, instance.clone())
+        .unwrap();
     let window = surface.window();
 
-    let queue_family = physical.queue_families().find(|&q| {
-        q.supports_graphics() && surface.is_supported(q).unwrap_or(false)
-    }).unwrap();
+    let queue_family = physical
+        .queue_families()
+        .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
+        .unwrap();
 
-    let device_ext = DeviceExtensions { khr_swapchain: true, .. DeviceExtensions::none() };
-    let (device, mut queues) = Device::new(physical, physical.supported_features(), &device_ext,
-        [(queue_family, 0.5)].iter().cloned()).unwrap();
+    let device_ext = DeviceExtensions {
+        khr_swapchain: true,
+        ..DeviceExtensions::none()
+    };
+    let (device, mut queues) = Device::new(
+        physical,
+        physical.supported_features(),
+        &device_ext,
+        [(queue_family, 0.5)].iter().cloned(),
+    )
+    .unwrap();
     let queue = queues.next().unwrap();
 
     let initial_dimensions = if let Some(dimensions) = window.get_inner_size() {
@@ -114,52 +176,57 @@ fn main() {
         let alpha = caps.supported_composite_alpha.iter().next().unwrap();
         let format = caps.supported_formats[0].0;
 
-        Swapchain::new(device.clone(), surface.clone(), caps.min_image_count, format, initial_dimensions,
-            1, usage, &queue, SurfaceTransform::Identity, alpha, PresentMode::Fifo, true, None).unwrap()
-    };
-
-    let vertex_buffer = {
-        #[derive(Default, Debug, Clone)]
-        struct Vertex { position: [f32; 2] }
-        vulkano::impl_vertex!(Vertex, position);
-
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), [
-            // BIGGER TRIANGLE
-            Vertex { position: [-1.0, 0.5] },
-            Vertex { position: [0.0, -1.0] },
-            Vertex { position: [0.5, 1.0] }
-            // BIGGER TRIANGLE END
-        ].iter().cloned()).unwrap()
+        Swapchain::new(
+            device.clone(),
+            surface.clone(),
+            caps.min_image_count,
+            format,
+            initial_dimensions,
+            1,
+            usage,
+            &queue,
+            SurfaceTransform::Identity,
+            alpha,
+            PresentMode::Fifo,
+            true,
+            None,
+        )
+        .unwrap()
     };
 
     let vs = vs::Shader::load(device.clone()).unwrap();
     let fs = fs::Shader::load(device.clone()).unwrap();
 
-    let render_pass = Arc::new(vulkano::single_pass_renderpass!(
-        device.clone(),
-        attachments: {
-            color: {
-                load: Clear,
-                store: Store,
-                format: swapchain.format(),
-                samples: 1,
+    let render_pass = Arc::new(
+        vulkano::single_pass_renderpass!(
+            device.clone(),
+            attachments: {
+                color: {
+                    load: Clear,
+                    store: Store,
+                    format: swapchain.format(),
+                    samples: 1,
+                }
+            },
+            pass: {
+                color: [color],
+                depth_stencil: {}
             }
-        },
-        pass: {
-            color: [color],
-            depth_stencil: {}
-        }
-    ).unwrap());
+        )
+        .unwrap(),
+    );
 
-    let pipeline = Arc::new(GraphicsPipeline::start()
-        .vertex_input_single_buffer()
-        .vertex_shader(vs.main_entry_point(), ())
-        .triangle_list()
-        .viewports_dynamic_scissors_irrelevant(1)
-        .fragment_shader(fs.main_entry_point(), ())
-        .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-        .build(device.clone())
-        .unwrap());
+    let pipeline = Arc::new(
+        GraphicsPipeline::start()
+            .vertex_input_single_buffer()
+            .vertex_shader(vs.main_entry_point(), ())
+            .triangle_list()
+            .viewports_dynamic_scissors_irrelevant(1)
+            .fragment_shader(fs.main_entry_point(), ())
+            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+            .build(device.clone())
+            .unwrap(),
+    );
 
     // CREATE DRAWTEXT
     let mut draw_text = DrawText::new(device.clone(), queue.clone(), swapchain.clone(), &images);
@@ -170,70 +237,102 @@ fn main() {
 
     let mut recreate_swapchain = false;
     let mut previous_frame_end = Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>;
-    let mut dynamic_state = DynamicState { line_width: None, viewports: None, scissors: None };
-    let mut framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
+    let mut dynamic_state = DynamicState {
+        line_width: None,
+        viewports: None,
+        scissors: None,
+    };
+    let mut framebuffers =
+        window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
     loop {
         previous_frame_end.cleanup_finished();
-        if recreate_swapchain {
-            let dimensions = if let Some(dimensions) = window.get_inner_size() {
-                let dimensions: (u32, u32) = dimensions.to_physical(window.get_hidpi_factor()).into();
-                [dimensions.0, dimensions.1]
-            } else {
-                return;
-            };
 
+        let dimensions = if let Some(dimensions) = window.get_inner_size() {
+            let dimensions: (u32, u32) = dimensions.to_physical(window.get_hidpi_factor()).into();
+            [dimensions.0, dimensions.1]
+        } else {
+            return;
+        };
+
+        if recreate_swapchain {
             let (new_swapchain, new_images) = match swapchain.recreate_with_dimension(dimensions) {
                 Ok(r) => r,
                 Err(SwapchainCreationError::UnsupportedDimensions) => continue,
-                Err(err) => panic!("{:?}", err)
+                Err(err) => panic!("{:?}", err),
             };
 
             swapchain = new_swapchain;
-            framebuffers = window_size_dependent_setup(&new_images, render_pass.clone(), &mut dynamic_state);
+            framebuffers =
+                window_size_dependent_setup(&new_images, render_pass.clone(), &mut dynamic_state);
             // RECREATE DRAWTEXT ON RESIZE
-            draw_text = DrawText::new(device.clone(), queue.clone(), swapchain.clone(), &new_images);
+            draw_text = DrawText::new(
+                device.clone(),
+                queue.clone(),
+                swapchain.clone(),
+                &new_images,
+            );
             // RECREATE DRAWTEXT ON RESIZE END
 
             recreate_swapchain = false;
         }
 
-        // SPECIFY TEXT TO DRAW
-        if x > width as f32 {
-            x = 0.0;
-        }
-        else {
-            x += 0.4;
-        }
+        let mut vertices = Vec::new();
 
-        draw_text.queue_text(200.0, 50.0, 20.0, [1.0, 1.0, 1.0, 1.0], "The quick brown fox jumps over the lazy dog.");
-        draw_text.queue_text(20.0, 200.0, 190.0, [0.0, 1.0, 1.0, 1.0], "Hello world!");
-        draw_text.queue_text(0.0, 350.0, 70.0, [0.51, 0.6, 0.74, 1.0], "Lenny: ( ͡° ͜ʖ ͡°)");
-        draw_text.queue_text(50.0, 350.0, 70.0, [1.0, 1.0, 1.0, 1.0], "Overlap");
-        // SPECIFY TEXT TO DRAW END
+        draw_folder(
+            "hello",
+            [200.0, 100.0],
+            [100.0, 100.0],
+            &mut draw_text,
+            &mut vertices,
+            [dimensions[0] as f32, dimensions[1] as f32],
+        );
 
-        let (image_num, acquire_future) = match swapchain::acquire_next_image(swapchain.clone(), None) {
-            Ok(r) => r,
-            Err(AcquireError::OutOfDate) => {
-                recreate_swapchain = true;
-                continue;
-            },
-            Err(err) => panic!("{:?}", err)
+        let (image_num, acquire_future) =
+            match swapchain::acquire_next_image(swapchain.clone(), None) {
+                Ok(r) => r,
+                Err(AcquireError::OutOfDate) => {
+                    recreate_swapchain = true;
+                    continue;
+                }
+                Err(err) => panic!("{:?}", err),
+            };
+
+        let clear_values = vec![[0.0, 0.0, 0.0, 1.0].into()]; // CHANGED TO BLACK BACKGROUND
+        let vertex_buffer = {
+            CpuAccessibleBuffer::from_iter(
+                device.clone(),
+                BufferUsage::all(),
+                vertices.iter().cloned(),
+            )
+            .unwrap()
         };
 
-        let clear_values = vec!([0.0, 0.0, 0.0, 1.0].into()); // CHANGED TO BLACK BACKGROUND
+        let command_buffer =
+            AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
+                .unwrap()
+                .begin_render_pass(framebuffers[image_num].clone(), false, clear_values)
+                .unwrap()
+                .draw(
+                    pipeline.clone(),
+                    &dynamic_state,
+                    vertex_buffer.clone(),
+                    (),
+                    (),
+                )
+                .unwrap()
+                .end_render_pass()
+                .unwrap()
+                // DRAW THE TEXT
+                .draw_text(&mut draw_text, image_num)
+                // DRAW THE TEXT END
+                .build()
+                .unwrap();
 
-        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family()).unwrap()
-            .begin_render_pass(framebuffers[image_num].clone(), false, clear_values).unwrap()
-            .draw(pipeline.clone(), &dynamic_state, vertex_buffer.clone(), (), ()).unwrap()
-            .end_render_pass().unwrap()
-            // DRAW THE TEXT
-            .draw_text(&mut draw_text, image_num)
-            // DRAW THE TEXT END
-            .build().unwrap();
-
-        let future = previous_frame_end.join(acquire_future)
-            .then_execute(queue.clone(), command_buffer).unwrap()
+        let future = previous_frame_end
+            .join(acquire_future)
+            .then_execute(queue.clone(), command_buffer)
+            .unwrap()
             .then_swapchain_present(queue.clone(), swapchain.clone(), image_num)
             .then_signal_fence_and_flush();
 
@@ -252,14 +351,20 @@ fn main() {
         }
 
         let mut done = false;
-        events_loop.poll_events(|ev| {
-            match ev {
-                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
-                Event::WindowEvent { event: WindowEvent::Resized(_), .. } => recreate_swapchain = true,
-                _ => ()
-            }
+        events_loop.poll_events(|ev| match ev {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => done = true,
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => recreate_swapchain = true,
+            _ => (),
         });
-        if done { return; }
+        if done {
+            return;
+        }
     }
 }
 
@@ -267,22 +372,27 @@ fn main() {
 fn window_size_dependent_setup(
     images: &[Arc<SwapchainImage<Window>>],
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    dynamic_state: &mut DynamicState
+    dynamic_state: &mut DynamicState,
 ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
     let dimensions = images[0].dimensions();
 
     let viewport = Viewport {
         origin: [0.0, 0.0],
         dimensions: [dimensions[0] as f32, dimensions[1] as f32],
-        depth_range: 0.0 .. 1.0,
+        depth_range: 0.0..1.0,
     };
-    dynamic_state.viewports = Some(vec!(viewport));
+    dynamic_state.viewports = Some(vec![viewport]);
 
-    images.iter().map(|image| {
-        Arc::new(
-            Framebuffer::start(render_pass.clone())
-                .add(image.clone()).unwrap()
-                .build().unwrap()
-        ) as Arc<dyn FramebufferAbstract + Send + Sync>
-    }).collect::<Vec<_>>()
+    images
+        .iter()
+        .map(|image| {
+            Arc::new(
+                Framebuffer::start(render_pass.clone())
+                    .add(image.clone())
+                    .unwrap()
+                    .build()
+                    .unwrap(),
+            ) as Arc<dyn FramebufferAbstract + Send + Sync>
+        })
+        .collect::<Vec<_>>()
 }
