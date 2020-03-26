@@ -187,9 +187,21 @@ fn draw_graph(
         );
     }
 
-    let mut index = 0;
     for edge in a_graph.edge_indices() {
-        if let Some(node_pair) = a_graph.edge_endpoints(edge) {}
+        if let Some(node_pair) = a_graph.edge_endpoints(edge) {
+            draw_line(
+                [
+                    a_graph[node_pair.0].position.x,
+                    a_graph[node_pair.0].position.y,
+                ],
+                [
+                    a_graph[node_pair.1].position.x,
+                    a_graph[node_pair.1].position.y,
+                ],
+                vertex_buffer,
+                window_dimensions,
+            );
+        }
     }
 }
 
@@ -254,6 +266,46 @@ fn draw_folder(
         [position[0], position[1] - size[1]],
         [position[0] + size[0], position[1]],
         [position[0] + size[0], position[1] - size[1]],
+    ]
+    .iter()
+    .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
+    .map(|x| vertex_buffer.push(Vertex { position: x }))
+    .count();
+}
+
+fn draw_line(
+    start: [f32; 2],
+    end: [f32; 2],
+    vertex_buffer: &mut Vec<Vertex>,
+    window_dimensions: [f32; 2],
+) {
+    let start = Vector {
+        x: start[0],
+        y: start[1],
+    };
+    let end = Vector {
+        x: end[0],
+        y: end[1],
+    };
+
+    let unit_line = Vector::subtract(end, start).unit();
+    let orthogonal = Vector {
+        x: unit_line.y,
+        y: -unit_line.x,
+    };
+
+    let corner_0 = Vector::add(start, orthogonal);
+    let corner_1 = Vector::subtract(start, orthogonal);
+    let corner_2 = Vector::add(end, orthogonal);
+    let corner_3 = Vector::subtract(end, orthogonal);
+
+    [
+        [corner_0.x, corner_0.y],
+        [corner_1.x, corner_1.y],
+        [corner_2.x, corner_2.y],
+        [corner_1.x, corner_1.y],
+        [corner_2.x, corner_2.y],
+        [corner_3.x, corner_3.y],
     ]
     .iter()
     .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
