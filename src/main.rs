@@ -29,14 +29,64 @@ use std::sync::Arc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::Bfs;
 
-struct Folder {
-    height: u32,
-    width: u32,
-}
-
 #[derive(Debug)]
 struct Node {
     name: String,
+    position: Vector,
+    mass: f32,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct Vector {
+    x: f32,
+    y: f32,
+}
+
+impl Vector {
+    fn distance_squared(first: Vector, second: Vector) -> f32 {
+        (first.x - second.x) * (first.x - second.x) + (first.y - second.y) * (first.y - second.y)
+    }
+
+    fn distance(first: Vector, second: Vector) -> f32 {
+        Self::distance_squared(first, second).sqrt()
+    }
+
+    fn length_squared(&self) -> f32 {
+        self.x * self.x + self.y * self.y
+    }
+
+    fn length(&self) -> f32 {
+        self.length_squared().sqrt()
+    }
+
+    fn multiply(&self, factor: f32) -> Self {
+        Self {
+            x: factor * self.x,
+            y: factor * self.y,
+        }
+    }
+
+    fn unit(&self) -> Self {
+        if self.length() == 0. {
+            Self { x: 0., y: 0. }
+        } else {
+            self.multiply(1. / self.length())
+        }
+    }
+
+    fn subtract(subtractee: Self, subtractor: Self) -> Self {
+        Self {
+            x: subtractee.x - subtractor.x,
+            y: subtractee.y - subtractor.y,
+        }
+    }
+
+    fn add(first: Self, second: Self) -> Self {
+        Self {
+            x: first.x + second.x,
+            y: first.y + second.y,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -51,6 +101,17 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
     match std::fs::read_dir(path) {
         Ok(subfolders) => {
             for subfolder in subfolders {
+                use rand::Rng;
+
+                let mut rng = rand::thread_rng();
+                let subfolder_position = Vector::add(
+                    a_graph[a_node_index].position,
+                    Vector {
+                        x: rng.gen_range(-100.0, 100.0),
+                        y: rng.gen_range(-100.0, 100.0),
+                    },
+                );
+
                 let new_node = a_graph.add_node(Node {
                     name: subfolder
                         .unwrap()
@@ -58,11 +119,77 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
                         .into_os_string()
                         .into_string()
                         .unwrap(),
+                    position: subfolder_position,
+                    mass: 0.5,
                 });
                 a_graph.add_edge(a_node_index, new_node, ());
             }
         }
         Err(_) => {}
+    }
+}
+
+fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
+    let mut bfs_0 = Bfs::new(&*a_graph, root);
+
+    while let Some(fixed_node) = bfs_0.next(&*a_graph) {
+        let fixed_position = a_graph[fixed_node].position;
+        let mut bfs_1 = Bfs::new(&*a_graph, root);
+
+        while let Some(node) = bfs_1.next(&*a_graph) {
+            let repel_vector = Vector::subtract(a_graph[node].position, fixed_position);
+            let repel_vector_length = if repel_vector.length() == 0. {
+                1.
+            } else {
+                (1. / repel_vector.length()).max(1.)
+            };
+            let repel_vector = repel_vector
+                .unit()
+                .multiply(repel_vector_length)
+                .multiply(10.0);
+            if node != root {
+                a_graph[node].position = Vector::add(a_graph[node].position, repel_vector);
+            }
+        }
+
+        let mut edges = (*a_graph).neighbors(fixed_node).detach();
+        while let Some(neighbor) = edges.next_node(&*a_graph) {
+            let attract_vector = Vector::subtract(fixed_position, a_graph[neighbor].position)
+                .multiply(a_graph[fixed_node].mass)
+                .multiply(1.1);
+            if neighbor != root {
+                a_graph[neighbor].position = Vector::add(a_graph[neighbor].position, attract_vector)
+            }
+        }
+    }
+}
+
+fn draw_graph(
+    mut a_graph: &mut DiGraph<Node, ()>,
+    root: NodeIndex,
+    text_buffer: &mut DrawText,
+    vertex_buffer: &mut Vec<Vertex>,
+    window_dimensions: [f32; 2],
+) {
+    let mut index = 0;
+
+    let mut bfs = Bfs::new(&*a_graph, root);
+
+    while let Some(node) = bfs.next(&*a_graph) {
+        let folder_or_file_index = a_graph[node].name.rfind("/").unwrap() + 1;
+        draw_folder(
+            &a_graph[node].name[folder_or_file_index..],
+            [a_graph[node].position.x, a_graph[node].position.y],
+            [100.0, 100.0],
+            text_buffer,
+            vertex_buffer,
+            window_dimensions,
+        );
+    }
+
+    let mut index = 0;
+    for edge in a_graph.edge_indices() {
+        if let Some(node_pair) = a_graph.edge_endpoints(edge) {}
     }
 }
 
@@ -135,6 +262,17 @@ fn draw_folder(
 }
 
 fn main() {
+    let mut a_graph = DiGraph::new();
+    let root = a_graph.add_node(Node {
+        name: "/home/tsrapnik/stack/projects".to_string(),
+        position: Vector { x: 400.0, y: 400.0 },
+        mass: 0.5,
+    });
+
+    browse_folder(&mut a_graph, root);
+    browse_folder(&mut a_graph, NodeIndex::new(1));
+    browse_folder(&mut a_graph, NodeIndex::new(2));
+
     let extensions = vulkano_win::required_extensions();
     let instance = Instance::new(None, &extensions, None).unwrap();
 
@@ -280,10 +418,11 @@ fn main() {
 
         let mut vertices = Vec::new();
 
-        draw_folder(
-            "hello",
-            [200.0, 100.0],
-            [100.0, 100.0],
+        move_graph_nodes(&mut a_graph, root);
+
+        draw_graph(
+            &mut a_graph,
+            root,
             &mut draw_text,
             &mut vertices,
             [dimensions[0] as f32, dimensions[1] as f32],
