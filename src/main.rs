@@ -33,7 +33,7 @@ use petgraph::visit::Bfs;
 struct Node {
     name: String,
     position: Vector,
-    mass: f32,
+    ideal_distance: f32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -120,9 +120,10 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
                         .into_string()
                         .unwrap(),
                     position: subfolder_position,
-                    mass: 0.5,
+                    ideal_distance: 150.0,
                 });
                 a_graph.add_edge(a_node_index, new_node, ());
+                a_graph[a_node_index].ideal_distance = 300.0;
             }
         }
         Err(_) => {}
@@ -132,35 +133,34 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
 fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
     let mut bfs_0 = Bfs::new(&*a_graph, root);
 
-    while let Some(fixed_node) = bfs_0.next(&*a_graph) {
-        let fixed_position = a_graph[fixed_node].position;
+    //for each pair of nodes repel the nodes if they come too close.
+    while let Some(node_0) = bfs_0.next(&*a_graph) {
+        let fixed_position = a_graph[node_0].position;
         let mut bfs_1 = Bfs::new(&*a_graph, root);
 
-        while let Some(node) = bfs_1.next(&*a_graph) {
-            let repel_vector = Vector::subtract(a_graph[node].position, fixed_position);
-            let repel_vector_length = if repel_vector.length() == 0. {
-                1.
-            } else {
-                (1. / repel_vector.length()).max(1.)
-            };
-            let repel_vector = repel_vector
-                .unit()
-                .multiply(repel_vector_length)
-                .multiply(10.0);
-            if node != root {
-                a_graph[node].position = Vector::add(a_graph[node].position, repel_vector);
+        while let Some(node_1) = bfs_1.next(&*a_graph) {
+            if (node_1 != root) && (node_1 != node_0) {
+                let repel_vector = Vector::subtract(a_graph[node_1].position, fixed_position);
+                let repel_vector_length = repel_vector.length().min(1.0);
+                if repel_vector_length < 100.0 {
+                    let repel_vector = repel_vector.unit().multiply(1.0 / (repel_vector_length * repel_vector_length));
+                    a_graph[node_1].position = Vector::add(a_graph[node_1].position, repel_vector);
+                }
             }
         }
+    }
 
-        let mut edges = (*a_graph).neighbors(fixed_node).detach();
-        while let Some(neighbor) = edges.next_node(&*a_graph) {
-            let attract_vector = Vector::subtract(fixed_position, a_graph[neighbor].position)
-                .multiply(a_graph[fixed_node].mass)
-                .multiply(1.1);
-            if neighbor != root {
-                a_graph[neighbor].position = Vector::add(a_graph[neighbor].position, attract_vector)
-            }
-        }
+    //for each edge pull back the child node towards the parent node to a wanted distance (or push away if too close).
+    for index in (*a_graph).edge_indices() {
+        let (node_0, node_1) = (*a_graph).edge_endpoints(index).unwrap();
+
+        let attract_vector = Vector::subtract(a_graph[node_0].position, a_graph[node_1].position);
+        let attract_vector_length = attract_vector.length();
+        let speed = 0.95;
+        let attract_vector = attract_vector
+            .unit()
+            .multiply(speed * (attract_vector_length - a_graph[node_1].ideal_distance));
+        a_graph[node_1].position = Vector::add(a_graph[node_1].position, attract_vector);
     }
 }
 
@@ -317,13 +317,19 @@ fn main() {
     let mut a_graph = DiGraph::new();
     let root = a_graph.add_node(Node {
         name: "/home/tsrapnik/stack/projects".to_string(),
-        position: Vector { x: 400.0, y: 400.0 },
-        mass: 0.5,
+        position: Vector {
+            x: 2000.0,
+            y: 1000.0,
+        },
+        ideal_distance: 0.0,
     });
 
     browse_folder(&mut a_graph, root);
     browse_folder(&mut a_graph, NodeIndex::new(1));
     browse_folder(&mut a_graph, NodeIndex::new(2));
+    browse_folder(&mut a_graph, NodeIndex::new(3));
+    browse_folder(&mut a_graph, NodeIndex::new(4));
+    browse_folder(&mut a_graph, NodeIndex::new(5));
 
     let extensions = vulkano_win::required_extensions();
     let instance = Instance::new(None, &extensions, None).unwrap();
