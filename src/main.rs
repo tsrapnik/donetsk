@@ -95,17 +95,22 @@ struct Vertex {
 }
 vulkano::impl_vertex!(Vertex, position);
 
-fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
-    let path = &a_graph[a_node_index].name;
-
+fn browse_folder(a_graph: &mut DiGraph<Node, ()>, parent_node: NodeIndex) {
+    let path = &a_graph[parent_node].name;
     match std::fs::read_dir(path) {
         Ok(subfolders) => {
+            let subfolder_count = subfolders.count() as f32;
+            //we cannot use the subfolders iterator again, so we create a new one (just unwrap, since we already checked for valid return).
+            //note: in theory it is possible the folder gets deleted in between the two reads, but this is virtually impossible.
+            let subfolders = std::fs::read_dir(path).unwrap();
+            a_graph[parent_node].ideal_distance = (subfolder_count * 40.0).max(300.0) + a_graph[parent_node].ideal_distance;
+            let subfolder_distance = (subfolder_count * 20.0).max(150.0);
             for subfolder in subfolders {
                 use rand::Rng;
 
                 let mut rng = rand::thread_rng();
                 let subfolder_position = Vector::add(
-                    a_graph[a_node_index].position,
+                    a_graph[parent_node].position,
                     Vector {
                         x: rng.gen_range(-100.0, 100.0),
                         y: rng.gen_range(-100.0, 100.0),
@@ -120,19 +125,19 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
                         .into_string()
                         .unwrap(),
                     position: subfolder_position,
-                    ideal_distance: 200.0,
+                    ideal_distance: subfolder_distance,
                 });
-                a_graph.add_edge(a_node_index, new_node, ());
-                //todo: ideal distance should be function of the amount of subfolders.
-                a_graph[a_node_index].ideal_distance = 500.0;
+                a_graph.add_edge(parent_node, new_node, ());
             }
         }
         Err(_) => {}
     }
 }
 
-fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
+fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
     let mut displacements = vec![Vector { x: 0.0, y: 0.0 }; a_graph.node_count()];
+
+    //todo: fix issue of chasing semicircles.
 
     //for each pair of nodes repel the nodes if they come too close.
     let mut bfs_0 = Bfs::new(&*a_graph, root);
@@ -144,15 +149,15 @@ fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
             if (node_1 != root) && (node_1 != node_0) {
                 let repel_vector = Vector::subtract(a_graph[node_1].position, fixed_position);
                 let repel_vector_length = repel_vector.length();
-                let force_range = 200.0;
-                let max_force = 10.0;
+                let force_range = 300.0;
+                let max_force = 15.0;
                 if repel_vector_length == 0.0 {
                     //if two nodes are on the same position, we don't know at what direction to push the other node.
                     //just push it a little to a fixed direction to solve the issue.
                     displacements[node_1.index()] =
                         Vector::add(displacements[node_1.index()], Vector { x: 1.0, y: 0.0 });
                 }
-                if repel_vector_length < force_range {
+                else if repel_vector_length < force_range {
                     //linear relation between distance and force seems to work well.
                     let repel_vector = repel_vector
                         .unit()
@@ -170,7 +175,7 @@ fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
 
         let attract_vector = Vector::subtract(a_graph[node_0].position, a_graph[node_1].position);
         let attract_vector_length = attract_vector.length();
-        let speed = 0.95;
+        let speed = 1.0;
         let attract_vector = attract_vector
             .unit()
             .multiply(speed * (attract_vector_length - a_graph[node_1].ideal_distance));
@@ -185,14 +190,12 @@ fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
 }
 
 fn draw_graph(
-    mut a_graph: &mut DiGraph<Node, ()>,
+    a_graph: &mut DiGraph<Node, ()>,
     root: NodeIndex,
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
     window_dimensions: [f32; 2],
 ) {
-    let mut index = 0;
-
     let mut bfs = Bfs::new(&*a_graph, root);
 
     while let Some(node) = bfs.next(&*a_graph) {
@@ -338,8 +341,8 @@ fn main() {
     let root = a_graph.add_node(Node {
         name: "/home/tsrapnik/stack/projects".to_string(),
         position: Vector {
-            x: 1000.0,
-            y: 500.0,
+            x: 2000.0,
+            y: 1000.0,
         },
         ideal_distance: 0.0,
     });
