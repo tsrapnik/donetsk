@@ -607,6 +607,10 @@ fn main() {
                 event: WindowEvent::Resized(_),
                 ..
             } => recreate_swapchain = true,
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                ..
+            } => {}
             _ => (),
         });
         if done {
