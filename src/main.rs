@@ -135,6 +135,7 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, parent_node: NodeIndex) {
 }
 
 fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
+    //todo: maybe remove creation of displacements and immediately change positions (should have nearly the same effect and requires less computation).
     let mut displacements = vec![Vector { x: 0.0, y: 0.0 }; a_graph.node_count()];
 
     //todo: fix issue of chasing semicircles.
