@@ -34,6 +34,7 @@ struct Node {
     name: String,
     position: Vector,
     ideal_distance: f32,
+    color: [f32; 3],
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -92,8 +93,9 @@ impl Vector {
 #[derive(Default, Debug, Clone)]
 struct Vertex {
     position: [f32; 2],
+    color: [f32; 3],
 }
-vulkano::impl_vertex!(Vertex, position);
+vulkano::impl_vertex!(Vertex, position, color);
 
 fn browse_folder(a_graph: &mut DiGraph<Node, ()>, parent_node: NodeIndex) {
     let path = &a_graph[parent_node].name;
@@ -103,12 +105,17 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, parent_node: NodeIndex) {
             //we cannot use the subfolders iterator again, so we create a new one (just unwrap, since we already checked for valid return).
             //note: in theory it is possible the folder gets deleted in between the two reads, but this is virtually impossible.
             let subfolders = std::fs::read_dir(path).unwrap();
-            a_graph[parent_node].ideal_distance = (subfolder_count * 40.0).max(300.0) + a_graph[parent_node].ideal_distance;
+            a_graph[parent_node].ideal_distance =
+                (subfolder_count * 40.0).max(300.0) + a_graph[parent_node].ideal_distance;
             let subfolder_distance = (subfolder_count * 20.0).max(150.0);
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            let color = [
+                rng.gen_range(0.0, 1.0),
+                rng.gen_range(0.0, 1.0),
+                rng.gen_range(0.0, 1.0),
+            ];
             for subfolder in subfolders {
-                use rand::Rng;
-
-                let mut rng = rand::thread_rng();
                 let subfolder_position = Vector::add(
                     a_graph[parent_node].position,
                     Vector {
@@ -126,6 +133,7 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, parent_node: NodeIndex) {
                         .unwrap(),
                     position: subfolder_position,
                     ideal_distance: subfolder_distance,
+                    color: color,
                 });
                 a_graph.add_edge(parent_node, new_node, ());
             }
@@ -157,8 +165,7 @@ fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
                     //just push it a little to a fixed direction to solve the issue.
                     displacements[node_1.index()] =
                         Vector::add(displacements[node_1.index()], Vector { x: 1.0, y: 0.0 });
-                }
-                else if repel_vector_length < force_range {
+                } else if repel_vector_length < force_range {
                     //linear relation between distance and force seems to work well.
                     let repel_vector = repel_vector
                         .unit()
@@ -204,6 +211,7 @@ fn draw_graph(
         draw_folder(
             &a_graph[node].name[folder_or_file_index..],
             [a_graph[node].position.x, a_graph[node].position.y],
+            a_graph[node].color,
             [100.0, 100.0],
             text_buffer,
             vertex_buffer,
@@ -236,9 +244,13 @@ mod vs {
 #version 450
 
 layout(location = 0) in vec2 position;
+layout(location = 1) in vec3 color;
+
+layout(location = 0) out vec3 out_color;
 
 void main() {
     gl_Position = vec4(position, 0.0, 1.0);
+    out_color = color;
 }"
     }
 }
@@ -249,10 +261,11 @@ mod fs {
         src: "
 #version 450
 
+layout(location = 0) in vec3 color;
 layout(location = 0) out vec4 f_color;
 
 void main() {
-    f_color = vec4(0.3, 0.2, 0.2, 1.0);
+    f_color = vec4(color, 1.0);
 }"
     }
 }
@@ -270,6 +283,7 @@ fn pixel_to_screen_coordinates(position: &[f32; 2], window_dimensions: &[f32; 2]
 fn draw_folder(
     title: &str,
     position: [f32; 2],
+    color: [f32; 3],
     size: [f32; 2],
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
@@ -293,7 +307,12 @@ fn draw_folder(
     ]
     .iter()
     .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
-    .map(|x| vertex_buffer.push(Vertex { position: x }))
+    .map(|x| {
+        vertex_buffer.push(Vertex {
+            position: x,
+            color: color,
+        })
+    })
     .count();
 }
 
@@ -333,7 +352,12 @@ fn draw_line(
     ]
     .iter()
     .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
-    .map(|x| vertex_buffer.push(Vertex { position: x }))
+    .map(|x| {
+        vertex_buffer.push(Vertex {
+            position: x,
+            color: [0.5, 0.2, 0.2],
+        })
+    })
     .count();
 }
 
@@ -346,6 +370,7 @@ fn main() {
             y: 1000.0,
         },
         ideal_distance: 0.0,
+        color: [0.5, 0.2, 0.2],
     });
 
     browse_folder(&mut a_graph, root);
