@@ -120,10 +120,11 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
                         .into_string()
                         .unwrap(),
                     position: subfolder_position,
-                    ideal_distance: 150.0,
+                    ideal_distance: 200.0,
                 });
                 a_graph.add_edge(a_node_index, new_node, ());
-                a_graph[a_node_index].ideal_distance = 300.0;
+                //todo: ideal distance should be function of the amount of subfolders.
+                a_graph[a_node_index].ideal_distance = 500.0;
             }
         }
         Err(_) => {}
@@ -131,9 +132,10 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, a_node_index: NodeIndex) {
 }
 
 fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
-    let mut bfs_0 = Bfs::new(&*a_graph, root);
+    let mut displacements = vec![Vector { x: 0.0, y: 0.0 }; a_graph.node_count()];
 
     //for each pair of nodes repel the nodes if they come too close.
+    let mut bfs_0 = Bfs::new(&*a_graph, root);
     while let Some(node_0) = bfs_0.next(&*a_graph) {
         let fixed_position = a_graph[node_0].position;
         let mut bfs_1 = Bfs::new(&*a_graph, root);
@@ -141,10 +143,22 @@ fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
         while let Some(node_1) = bfs_1.next(&*a_graph) {
             if (node_1 != root) && (node_1 != node_0) {
                 let repel_vector = Vector::subtract(a_graph[node_1].position, fixed_position);
-                let repel_vector_length = repel_vector.length().min(1.0);
-                if repel_vector_length < 100.0 {
-                    let repel_vector = repel_vector.unit().multiply(1.0 / (repel_vector_length * repel_vector_length));
-                    a_graph[node_1].position = Vector::add(a_graph[node_1].position, repel_vector);
+                let repel_vector_length = repel_vector.length();
+                let force_range = 200.0;
+                let max_force = 10.0;
+                if repel_vector_length == 0.0 {
+                    //if two nodes are on the same position, we don't know at what direction to push the other node.
+                    //just push it a little to a fixed direction to solve the issue.
+                    displacements[node_1.index()] =
+                        Vector::add(displacements[node_1.index()], Vector { x: 1.0, y: 0.0 });
+                }
+                if repel_vector_length < force_range {
+                    //linear relation between distance and force seems to work well.
+                    let repel_vector = repel_vector
+                        .unit()
+                        .multiply(max_force / force_range * (force_range - repel_vector_length));
+                    displacements[node_1.index()] =
+                        Vector::add(displacements[node_1.index()], repel_vector);
                 }
             }
         }
@@ -160,7 +174,13 @@ fn move_graph_nodes(mut a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
         let attract_vector = attract_vector
             .unit()
             .multiply(speed * (attract_vector_length - a_graph[node_1].ideal_distance));
-        a_graph[node_1].position = Vector::add(a_graph[node_1].position, attract_vector);
+        displacements[node_1.index()] = Vector::add(displacements[node_1.index()], attract_vector);
+    }
+
+    //apply the calculated displacements to all node positions.
+    let mut bfs = Bfs::new(&*a_graph, root);
+    while let Some(node) = bfs.next(&*a_graph) {
+        a_graph[node].position = Vector::add(a_graph[node].position, displacements[node.index()]);
     }
 }
 
@@ -318,8 +338,8 @@ fn main() {
     let root = a_graph.add_node(Node {
         name: "/home/tsrapnik/stack/projects".to_string(),
         position: Vector {
-            x: 2000.0,
-            y: 1000.0,
+            x: 1000.0,
+            y: 500.0,
         },
         ideal_distance: 0.0,
     });
