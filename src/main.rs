@@ -143,17 +143,19 @@ fn draw_graph(
     root: NodeIndex,
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
-    window_dimensions: &Vector2<f32>,
+    window_dimensions: Vector2<f32>,
 ) {
     let mut bfs = Bfs::new(&*a_graph, root);
+
+    // for node in a_graph.node_indices() todo
 
     while let Some(node) = bfs.next(&*a_graph) {
         let folder_or_file_index = a_graph[node].name.rfind("/").unwrap() + 1;
         draw_folder(
             &a_graph[node].name[folder_or_file_index..],
-            &a_graph[node].position,
+            a_graph[node].position,
             a_graph[node].color,
-            &Vector2::new(100.0, 100.0),
+            Vector2::new(100.0, 100.0),
             text_buffer,
             vertex_buffer,
             window_dimensions,
@@ -163,8 +165,8 @@ fn draw_graph(
     for edge in a_graph.edge_indices() {
         if let Some(node_pair) = a_graph.edge_endpoints(edge) {
             draw_line(
-                &a_graph[node_pair.0].position,
-                &a_graph[node_pair.1].position,
+                a_graph[node_pair.0].position,
+                a_graph[node_pair.1].position,
                 vertex_buffer,
                 window_dimensions,
             );
@@ -206,27 +208,27 @@ void main() {
 }
 
 fn pixel_to_screen_coordinates(
-    position: &Vector2<f32>,
-    window_dimensions: &Vector2<f32>,
+    position: Vector2<f32>,
+    window_dimensions: Vector2<f32>,
 ) -> Vector2<f32> {
-    position.zip_map(window_dimensions, |p, w| 2.0 / w * p - 1.0)
+    position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
 }
 
 fn screen_to_pixel_coordinates(
-    position: &Vector2<f32>,
-    window_dimensions: &Vector2<f32>,
+    position: Vector2<f32>,
+    window_dimensions: Vector2<f32>,
 ) -> Vector2<f32> {
-    position.zip_map(window_dimensions, |p, w| w / 2.0 * (p + 1.0))
+    position.zip_map(&window_dimensions, |p, w| w / 2.0 * (p + 1.0))
 }
 
 fn draw_folder(
     title: &str,
-    position: &Vector2<f32>,
+    position: Vector2<f32>,
     color: [f32; 3],
-    size: &Vector2<f32>,
+    size: Vector2<f32>,
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
-    window_dimensions: &Vector2<f32>,
+    window_dimensions: Vector2<f32>,
 ) {
     text_buffer.queue_text(
         position[0],
@@ -245,7 +247,7 @@ fn draw_folder(
         Vector2::new(position[0] + size[0], position[1] - size[1]),
     ]
     .iter()
-    .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
+    .map(|x| pixel_to_screen_coordinates(*x, window_dimensions))
     .map(|p| {
         vertex_buffer.push(Vertex {
             position: [p.x, p.y],
@@ -256,10 +258,10 @@ fn draw_folder(
 }
 
 fn draw_line(
-    start: &Vector2<f32>,
-    end: &Vector2<f32>,
+    start: Vector2<f32>,
+    end: Vector2<f32>,
     vertex_buffer: &mut Vec<Vertex>,
-    window_dimensions: &Vector2<f32>,
+    window_dimensions: Vector2<f32>,
 ) {
     let start = Vector2::new(start[0], start[1]);
     let end = Vector2::new(end[0], end[1]);
@@ -274,7 +276,7 @@ fn draw_line(
 
     [corner_0, corner_1, corner_2, corner_1, corner_2, corner_3]
         .iter()
-        .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
+        .map(|x| pixel_to_screen_coordinates(*x, window_dimensions))
         .map(|p| {
             vertex_buffer.push(Vertex {
                 position: [p.x, p.y],
@@ -452,7 +454,7 @@ fn main() {
             root,
             &mut draw_text,
             &mut vertices,
-            &Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
+            Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
         );
 
         let (image_num, acquire_future) =
