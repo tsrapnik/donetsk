@@ -29,65 +29,14 @@ use std::sync::Arc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::Bfs;
 
+use nalgebra::Vector2;
+
 #[derive(Debug)]
 struct Node {
     name: String,
-    position: Vector,
+    position: Vector2<f32>,
     ideal_distance: f32,
     color: [f32; 3],
-}
-
-#[derive(Debug, Copy, Clone)]
-struct Vector {
-    x: f32,
-    y: f32,
-}
-
-impl Vector {
-    fn distance_squared(first: Vector, second: Vector) -> f32 {
-        (first.x - second.x) * (first.x - second.x) + (first.y - second.y) * (first.y - second.y)
-    }
-
-    fn distance(first: Vector, second: Vector) -> f32 {
-        Self::distance_squared(first, second).sqrt()
-    }
-
-    fn length_squared(&self) -> f32 {
-        self.x * self.x + self.y * self.y
-    }
-
-    fn length(&self) -> f32 {
-        self.length_squared().sqrt()
-    }
-
-    fn multiply(&self, factor: f32) -> Self {
-        Self {
-            x: factor * self.x,
-            y: factor * self.y,
-        }
-    }
-
-    fn unit(&self) -> Self {
-        if self.length() == 0. {
-            Self { x: 0., y: 0. }
-        } else {
-            self.multiply(1. / self.length())
-        }
-    }
-
-    fn subtract(subtractee: Self, subtractor: Self) -> Self {
-        Self {
-            x: subtractee.x - subtractor.x,
-            y: subtractee.y - subtractor.y,
-        }
-    }
-
-    fn add(first: Self, second: Self) -> Self {
-        Self {
-            x: first.x + second.x,
-            y: first.y + second.y,
-        }
-    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -116,13 +65,8 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, parent_node: NodeIndex) {
                 rng.gen_range(0.0, 1.0),
             ];
             for subfolder in subfolders {
-                let subfolder_position = Vector::add(
-                    a_graph[parent_node].position,
-                    Vector {
-                        x: rng.gen_range(-100.0, 100.0),
-                        y: rng.gen_range(-100.0, 100.0),
-                    },
-                );
+                let subfolder_position = a_graph[parent_node].position
+                    + Vector2::new(rng.gen_range(-100.0, 100.0), rng.gen_range(-100.0, 100.0));
 
                 let new_node = a_graph.add_node(Node {
                     name: subfolder
@@ -144,7 +88,7 @@ fn browse_folder(a_graph: &mut DiGraph<Node, ()>, parent_node: NodeIndex) {
 
 fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
     //todo: maybe remove creation of displacements and immediately change positions (should have nearly the same effect and requires less computation).
-    let mut displacements = vec![Vector { x: 0.0, y: 0.0 }; a_graph.node_count()];
+    let mut displacements = vec![Vector2::new(0.0, 0.0); a_graph.node_count()];
 
     //todo: fix issue of chasing semicircles.
 
@@ -156,22 +100,20 @@ fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
 
         while let Some(node_1) = bfs_1.next(&*a_graph) {
             if (node_1 != root) && (node_1 != node_0) {
-                let repel_vector = Vector::subtract(a_graph[node_1].position, fixed_position);
-                let repel_vector_length = repel_vector.length();
+                let repel_vector = a_graph[node_1].position - fixed_position;
+                let repel_vector_length = repel_vector.norm();
                 let force_range = 300.0;
                 let max_force = 15.0;
                 if repel_vector_length == 0.0 {
                     //if two nodes are on the same position, we don't know at what direction to push the other node.
                     //just push it a little to a fixed direction to solve the issue.
                     displacements[node_1.index()] =
-                        Vector::add(displacements[node_1.index()], Vector { x: 1.0, y: 0.0 });
+                        displacements[node_1.index()] + Vector2::new(1.0, 0.0);
                 } else if repel_vector_length < force_range {
                     //linear relation between distance and force seems to work well.
-                    let repel_vector = repel_vector
-                        .unit()
-                        .multiply(max_force / force_range * (force_range - repel_vector_length));
-                    displacements[node_1.index()] =
-                        Vector::add(displacements[node_1.index()], repel_vector);
+                    let repel_vector = repel_vector.normalize()
+                        * (max_force / force_range * (force_range - repel_vector_length));
+                    displacements[node_1.index()] = displacements[node_1.index()] + repel_vector;
                 }
             }
         }
@@ -181,19 +123,18 @@ fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
     for index in (*a_graph).edge_indices() {
         let (node_0, node_1) = (*a_graph).edge_endpoints(index).unwrap();
 
-        let attract_vector = Vector::subtract(a_graph[node_0].position, a_graph[node_1].position);
-        let attract_vector_length = attract_vector.length();
+        let attract_vector = a_graph[node_0].position - a_graph[node_1].position;
+        let attract_vector_length = attract_vector.norm();
         let speed = 1.0;
-        let attract_vector = attract_vector
-            .unit()
-            .multiply(speed * (attract_vector_length - a_graph[node_1].ideal_distance));
-        displacements[node_1.index()] = Vector::add(displacements[node_1.index()], attract_vector);
+        let attract_vector = attract_vector.normalize()
+            * (speed * (attract_vector_length - a_graph[node_1].ideal_distance));
+        displacements[node_1.index()] = displacements[node_1.index()] + attract_vector;
     }
 
     //apply the calculated displacements to all node positions.
     let mut bfs = Bfs::new(&*a_graph, root);
     while let Some(node) = bfs.next(&*a_graph) {
-        a_graph[node].position = Vector::add(a_graph[node].position, displacements[node.index()]);
+        a_graph[node].position = a_graph[node].position + displacements[node.index()];
     }
 }
 
@@ -202,7 +143,7 @@ fn draw_graph(
     root: NodeIndex,
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
-    window_dimensions: [f32; 2],
+    window_dimensions: &Vector2<f32>,
 ) {
     let mut bfs = Bfs::new(&*a_graph, root);
 
@@ -210,9 +151,9 @@ fn draw_graph(
         let folder_or_file_index = a_graph[node].name.rfind("/").unwrap() + 1;
         draw_folder(
             &a_graph[node].name[folder_or_file_index..],
-            [a_graph[node].position.x, a_graph[node].position.y],
+            &a_graph[node].position,
             a_graph[node].color,
-            [100.0, 100.0],
+            &Vector2::new(100.0, 100.0),
             text_buffer,
             vertex_buffer,
             window_dimensions,
@@ -222,14 +163,8 @@ fn draw_graph(
     for edge in a_graph.edge_indices() {
         if let Some(node_pair) = a_graph.edge_endpoints(edge) {
             draw_line(
-                [
-                    a_graph[node_pair.0].position.x,
-                    a_graph[node_pair.0].position.y,
-                ],
-                [
-                    a_graph[node_pair.1].position.x,
-                    a_graph[node_pair.1].position.y,
-                ],
+                &a_graph[node_pair.0].position,
+                &a_graph[node_pair.1].position,
                 vertex_buffer,
                 window_dimensions,
             );
@@ -270,24 +205,28 @@ void main() {
     }
 }
 
-fn pixel_to_screen_coordinates(position: &[f32; 2], window_dimensions: &[f32; 2]) -> [f32; 2] {
-    let wrapped_result: Vec<f32> = position
-        .iter()
-        .zip(window_dimensions)
-        .map(|(p, w)| 2.0 * p / w - 1.0)
-        .collect();
+fn pixel_to_screen_coordinates(
+    position: &Vector2<f32>,
+    window_dimensions: &Vector2<f32>,
+) -> Vector2<f32> {
+    position.zip_map(window_dimensions, |p, w| 2.0 / w * p - 1.0)
+}
 
-    [wrapped_result[0], wrapped_result[1]]
+fn screen_to_pixel_coordinates(
+    position: &Vector2<f32>,
+    window_dimensions: &Vector2<f32>,
+) -> Vector2<f32> {
+    position.zip_map(window_dimensions, |p, w| w / 2.0 * (p + 1.0))
 }
 
 fn draw_folder(
     title: &str,
-    position: [f32; 2],
+    position: &Vector2<f32>,
     color: [f32; 3],
-    size: [f32; 2],
+    size: &Vector2<f32>,
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
-    window_dimensions: [f32; 2],
+    window_dimensions: &Vector2<f32>,
 ) {
     text_buffer.queue_text(
         position[0],
@@ -298,18 +237,18 @@ fn draw_folder(
     );
 
     [
-        [position[0], position[1]],
-        [position[0] + size[0], position[1]],
-        [position[0], position[1] - size[1]],
-        [position[0], position[1] - size[1]],
-        [position[0] + size[0], position[1]],
-        [position[0] + size[0], position[1] - size[1]],
+        Vector2::new(position[0], position[1]),
+        Vector2::new(position[0] + size[0], position[1]),
+        Vector2::new(position[0], position[1] - size[1]),
+        Vector2::new(position[0], position[1] - size[1]),
+        Vector2::new(position[0] + size[0], position[1]),
+        Vector2::new(position[0] + size[0], position[1] - size[1]),
     ]
     .iter()
     .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
-    .map(|x| {
+    .map(|p| {
         vertex_buffer.push(Vertex {
-            position: x,
+            position: [p.x, p.y],
             color: color,
         })
     })
@@ -317,58 +256,39 @@ fn draw_folder(
 }
 
 fn draw_line(
-    start: [f32; 2],
-    end: [f32; 2],
+    start: &Vector2<f32>,
+    end: &Vector2<f32>,
     vertex_buffer: &mut Vec<Vertex>,
-    window_dimensions: [f32; 2],
+    window_dimensions: &Vector2<f32>,
 ) {
-    let start = Vector {
-        x: start[0],
-        y: start[1],
-    };
-    let end = Vector {
-        x: end[0],
-        y: end[1],
-    };
+    let start = Vector2::new(start[0], start[1]);
+    let end = Vector2::new(end[0], end[1]);
 
-    let unit_line = Vector::subtract(end, start).unit();
-    let orthogonal = Vector {
-        x: unit_line.y,
-        y: -unit_line.x,
-    };
+    let unit_line = (end - start).normalize();
+    let orthogonal = Vector2::new(unit_line.y, -unit_line.x);
 
-    let corner_0 = Vector::add(start, orthogonal);
-    let corner_1 = Vector::subtract(start, orthogonal);
-    let corner_2 = Vector::add(end, orthogonal);
-    let corner_3 = Vector::subtract(end, orthogonal);
+    let corner_0 = start + orthogonal;
+    let corner_1 = start - orthogonal;
+    let corner_2 = end + orthogonal;
+    let corner_3 = end - orthogonal;
 
-    [
-        [corner_0.x, corner_0.y],
-        [corner_1.x, corner_1.y],
-        [corner_2.x, corner_2.y],
-        [corner_1.x, corner_1.y],
-        [corner_2.x, corner_2.y],
-        [corner_3.x, corner_3.y],
-    ]
-    .iter()
-    .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
-    .map(|x| {
-        vertex_buffer.push(Vertex {
-            position: x,
-            color: [0.5, 0.2, 0.2],
+    [corner_0, corner_1, corner_2, corner_1, corner_2, corner_3]
+        .iter()
+        .map(|x| pixel_to_screen_coordinates(x, &window_dimensions))
+        .map(|p| {
+            vertex_buffer.push(Vertex {
+                position: [p.x, p.y],
+                color: [0.5, 0.2, 0.2],
+            })
         })
-    })
-    .count();
+        .count();
 }
 
 fn main() {
     let mut a_graph = DiGraph::new();
     let root = a_graph.add_node(Node {
         name: "/home/tsrapnik/stack/projects".to_string(),
-        position: Vector {
-            x: 2000.0,
-            y: 1000.0,
-        },
+        position: Vector2::new(2000.0, 1000.0),
         ideal_distance: 0.0,
         color: [0.5, 0.2, 0.2],
     });
@@ -532,7 +452,7 @@ fn main() {
             root,
             &mut draw_text,
             &mut vertices,
-            [dimensions[0] as f32, dimensions[1] as f32],
+            &Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
         );
 
         let (image_num, acquire_future) =
@@ -610,7 +530,7 @@ fn main() {
             Event::WindowEvent {
                 event: WindowEvent::CursorMoved { position, .. },
                 ..
-            } => {}
+            } => { /*todo: use for click events.*/ }
             _ => (),
         });
         if done {
