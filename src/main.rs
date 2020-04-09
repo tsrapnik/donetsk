@@ -27,7 +27,6 @@ use winit::{Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 use std::sync::Arc;
 
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::visit::Bfs;
 
 use nalgebra::Vector2;
 
@@ -93,12 +92,10 @@ fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
     //todo: fix issue of chasing semicircles.
 
     //for each pair of nodes repel the nodes if they come too close.
-    let mut bfs_0 = Bfs::new(&*a_graph, root);
-    while let Some(node_0) = bfs_0.next(&*a_graph) {
+    for node_0 in a_graph.node_indices() {
         let fixed_position = a_graph[node_0].position;
-        let mut bfs_1 = Bfs::new(&*a_graph, root);
 
-        while let Some(node_1) = bfs_1.next(&*a_graph) {
+        for node_1 in a_graph.node_indices() {
             if (node_1 != root) && (node_1 != node_0) {
                 let repel_vector = a_graph[node_1].position - fixed_position;
                 let repel_vector_length = repel_vector.norm();
@@ -132,24 +129,18 @@ fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
     }
 
     //apply the calculated displacements to all node positions.
-    let mut bfs = Bfs::new(&*a_graph, root);
-    while let Some(node) = bfs.next(&*a_graph) {
+    for node in a_graph.node_indices() {
         a_graph[node].position = a_graph[node].position + displacements[node.index()];
     }
 }
 
 fn draw_graph(
-    a_graph: &mut DiGraph<Node, ()>,
-    root: NodeIndex,
+    a_graph: & DiGraph<Node, ()>,
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
     window_dimensions: Vector2<f32>,
 ) {
-    let mut bfs = Bfs::new(&*a_graph, root);
-
-    // for node in a_graph.node_indices() todo
-
-    while let Some(node) = bfs.next(&*a_graph) {
+    for node in a_graph.node_indices() {
         let folder_or_file_index = a_graph[node].name.rfind("/").unwrap() + 1;
         draw_folder(
             &a_graph[node].name[folder_or_file_index..],
@@ -450,8 +441,7 @@ fn main() {
         move_graph_nodes(&mut a_graph, root);
 
         draw_graph(
-            &mut a_graph,
-            root,
+            & a_graph,
             &mut draw_text,
             &mut vertices,
             Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
