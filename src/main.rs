@@ -135,7 +135,7 @@ fn move_graph_nodes(a_graph: &mut DiGraph<Node, ()>, root: NodeIndex) {
 }
 
 fn draw_graph(
-    a_graph: & DiGraph<Node, ()>,
+    a_graph: &DiGraph<Node, ()>,
     text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<Vertex>,
     window_dimensions: Vector2<f32>,
@@ -278,21 +278,6 @@ fn draw_line(
 }
 
 fn main() {
-    let mut a_graph = DiGraph::new();
-    let root = a_graph.add_node(Node {
-        name: "/home/tsrapnik/stack/projects".to_string(),
-        position: Vector2::new(2000.0, 1000.0),
-        ideal_distance: 0.0,
-        color: [0.5, 0.2, 0.2],
-    });
-
-    browse_folder(&mut a_graph, root);
-    browse_folder(&mut a_graph, NodeIndex::new(1));
-    browse_folder(&mut a_graph, NodeIndex::new(2));
-    browse_folder(&mut a_graph, NodeIndex::new(3));
-    browse_folder(&mut a_graph, NodeIndex::new(4));
-    browse_folder(&mut a_graph, NodeIndex::new(5));
-
     let extensions = vulkano_win::required_extensions();
     let instance = Instance::new(None, &extensions, None).unwrap();
 
@@ -404,6 +389,24 @@ fn main() {
     let mut framebuffers =
         window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
+    let mut a_graph = DiGraph::new();
+    let root = a_graph.add_node(Node {
+        name: "/home/tsrapnik/stack/projects".to_string(),
+        position: Vector2::new(
+            0.5 * (initial_dimensions[0] as f32),
+            0.5 * (initial_dimensions[1] as f32),
+        ),
+        ideal_distance: 0.0,
+        color: [0.5, 0.2, 0.2],
+    });
+
+    browse_folder(&mut a_graph, root);
+    browse_folder(&mut a_graph, NodeIndex::new(1));
+    browse_folder(&mut a_graph, NodeIndex::new(2));
+    browse_folder(&mut a_graph, NodeIndex::new(3));
+    browse_folder(&mut a_graph, NodeIndex::new(4));
+    browse_folder(&mut a_graph, NodeIndex::new(5));
+
     loop {
         previous_frame_end.cleanup_finished();
 
@@ -413,6 +416,9 @@ fn main() {
         } else {
             return;
         };
+
+        a_graph[root].position.x = 0.5 * (dimensions[0] as f32);
+        a_graph[root].position.y = 0.5 * (dimensions[1] as f32);
 
         if recreate_swapchain {
             let (new_swapchain, new_images) = match swapchain.recreate_with_dimension(dimensions) {
@@ -441,7 +447,7 @@ fn main() {
         move_graph_nodes(&mut a_graph, root);
 
         draw_graph(
-            & a_graph,
+            &a_graph,
             &mut draw_text,
             &mut vertices,
             Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
