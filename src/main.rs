@@ -20,7 +20,7 @@ fn main() {
 
     let mut folder_tree = DiGraph::new();
     let root = folder_tree.add_node(folder_tree::Node {
-        name: "/home/tsrapnik/stack/projects".to_string(),
+        name: "C:/Users/tsrapnik".to_string(),
         position: Vector2::new(
             0.5 * (initial_dimensions[0] as f32),
             0.5 * (initial_dimensions[1] as f32),
