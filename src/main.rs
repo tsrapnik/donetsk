@@ -1,3 +1,5 @@
+use std::{thread, time};
+
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use nalgebra::Vector2;
@@ -35,8 +37,9 @@ fn main() {
     folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(3));
     folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(4));
     folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(5));
-
+    let mut index = 0;
     event_loop.run(move |event, _, control_flow| {
+        let now = time::Instant::now();
         let mut window_resized = false;
         match event {
             Event::WindowEvent {
@@ -51,14 +54,11 @@ fn main() {
             } => {
                 window_resized = true;
             }
-            Event::RedrawEventsCleared => {
-                
-            }
+            Event::RedrawEventsCleared => {}
             _ => (),
         }
         folder_tree[root].position.x = 0.5 * (dimensions[0] as f32);
         folder_tree[root].position.y = 0.5 * (dimensions[1] as f32);
-        
 
         let mut vertices = Vec::new();
 
@@ -70,6 +70,9 @@ fn main() {
             &mut vertices,
             Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
         );
-        renderer.render(/*&mut draw_text, */&mut vertices, window_resized);
+        renderer.render(/*&mut draw_text, */ &mut vertices, window_resized);
+        println!("{:?}", now.elapsed());
+        println!("{}", index);
+        index += 1;
     })
 }

@@ -10,14 +10,15 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 use vulkano::swapchain;
 use vulkano::swapchain::{
-    AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError, ColorSpace, FullscreenExclusive
+    AcquireError, ColorSpace, FullscreenExclusive, PresentMode, SurfaceTransform, Swapchain,
+    SwapchainCreationError,
 };
 use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture};
 
 use vulkano_win::VkSurfaceBuild;
-use winit::window::{Window, WindowBuilder};
 use winit::event_loop::EventLoop;
+use winit::window::{Window, WindowBuilder};
 
 use std::sync::Arc;
 
@@ -81,7 +82,7 @@ pub struct Renderer {
     draw_text: DrawText,
     device: Arc<Device>,
     queue: Arc<vulkano::device::Queue>,
-    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>
+    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 }
 
 impl Renderer {
@@ -90,13 +91,13 @@ impl Renderer {
         let instance = Instance::new(None, &extensions, None).unwrap();
         let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
         let surface = WindowBuilder::new()
-        .build_vk_surface(event_loop, instance.clone())
-        .unwrap();
+            .build_vk_surface(event_loop, instance.clone())
+            .unwrap();
         let window = surface.window();
         let queue_family = physical
-        .queue_families()
-        .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
-        .unwrap();
+            .queue_families()
+            .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
+            .unwrap();
         let device_ext = DeviceExtensions {
             khr_swapchain: true,
             ..DeviceExtensions::none()
@@ -110,7 +111,7 @@ impl Renderer {
         .unwrap();
 
         let queue = queues.next().unwrap();
-        let initial_dimensions: [u32; 2]= window.inner_size().into();
+        let initial_dimensions: [u32; 2] = window.inner_size().into();
         let (swapchain, images) = {
             let caps = surface.capabilities(physical).unwrap();
             let usage = caps.supported_usage_flags;
@@ -166,8 +167,7 @@ impl Renderer {
                 .unwrap(),
         );
 
-        let draw_text =
-            DrawText::new(device.clone(), queue.clone(), swapchain.clone(), &images);
+        let draw_text = DrawText::new(device.clone(), queue.clone(), swapchain.clone(), &images);
         let previous_frame_end = Some(Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>);
         let mut dynamic_state = DynamicState {
             line_width: None,
@@ -196,7 +196,11 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self/*, text_buffer: &mut DrawText*/, vertices: &mut Vec<Vertex>, window_resized: bool) {
+    pub fn render(
+        &mut self, /*, text_buffer: &mut DrawText*/
+        vertices: &mut Vec<Vertex>,
+        window_resized: bool,
+    ) {
         self.recreate_swapchain |= window_resized;
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
