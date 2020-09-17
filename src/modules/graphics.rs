@@ -1,6 +1,6 @@
 use vulkano_text::{DrawText, DrawTextTrait};
 
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
+use vulkano::buffer::{BufferUsage, CpuBufferPool};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::device::{Device, DeviceExtensions};
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
@@ -24,12 +24,21 @@ use std::sync::Arc;
 
 use nalgebra::Vector2;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct Vertex {
     pub position: [f32; 2],
     pub color: [f32; 3],
 }
 vulkano::impl_vertex!(Vertex, position, color);
+
+impl Vertex {
+    pub fn zeroed_vertex() -> Vertex {
+        Vertex {
+            position: [0.0; 2],
+            color: [0.0; 3],
+        }
+    }
+}
 
 pub mod vs {
     vulkano_shaders::shader! {
@@ -71,12 +80,15 @@ pub fn pixel_to_screen_coordinates(
     position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
 }
 
+const MAX_VERTEX_COUNT : usize = 1000;
+
 pub struct Renderer {
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     surface: Arc<vulkano::swapchain::Surface<Window>>,
     recreate_swapchain: bool,
     swapchain: Arc<Swapchain<Window>>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    vertex_buffer: CpuBufferPool<[Vertex; MAX_VERTEX_COUNT]>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     dynamic_state: DynamicState,
     draw_text: DrawText,
@@ -187,6 +199,7 @@ impl Renderer {
             recreate_swapchain: false,
             swapchain: swapchain,
             framebuffers: framebuffers,
+            vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
             render_pass: render_pass,
             dynamic_state: dynamic_state,
             draw_text: draw_text, //todo: remove.
@@ -247,14 +260,13 @@ impl Renderer {
             self.recreate_swapchain = true;
         }
         let clear_values = vec![[0.0, 0.0, 0.0, 1.0].into()];
+
         let vertex_buffer = {
-            CpuAccessibleBuffer::from_iter(
-                self.device.clone(),
-                BufferUsage::all(),
-                false,
-                vertices.iter().cloned(),
-            )
-            .unwrap()
+            let mut vertex_array = [Vertex::zeroed_vertex(); MAX_VERTEX_COUNT]; //todo: is there a better way to copy vertices to vertex_buffer?
+            for (index, vertex) in vertices.iter().enumerate() {
+                vertex_array[index] = *vertex;
+            }
+            Arc::new(self.vertex_buffer.next(vertex_array).unwrap())
         };
 
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
@@ -267,7 +279,7 @@ impl Renderer {
         .draw(
             self.pipeline.clone(),
             &self.dynamic_state,
-            vec![vertex_buffer.clone()],
+            vec!(vertex_buffer),
             (),
             (),
         )
