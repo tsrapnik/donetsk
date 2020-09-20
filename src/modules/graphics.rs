@@ -1,30 +1,20 @@
 use vulkano_text::{DrawText, DrawTextTrait};
 
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool};
-use vulkano::command_buffer::{
-    pool::standard::StandardCommandPool,
-    synced::SyncCommandBufferBuilder,
-    sys::UnsafeCommandBufferBuilder,
-    sys::{Flags, Kind},
-    AutoCommandBufferBuilder, DynamicState, StateCacher,
-};
+use vulkano::buffer::{BufferUsage, CpuBufferPool};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::device::{Device, DeviceExtensions};
-use vulkano::framebuffer::{
-    Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass, SubpassContents,
-};
+use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::SwapchainImage;
 use vulkano::instance::{Instance, PhysicalDevice};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
-use vulkano::query;
 use vulkano::swapchain;
 use vulkano::swapchain::{
     AcquireError, ColorSpace, FullscreenExclusive, PresentMode, SurfaceTransform, Swapchain,
     SwapchainCreationError,
 };
 use vulkano::sync;
-use vulkano::sync::{FlushError, GpuFuture, PipelineStages};
-use vulkano::format::ClearValue;
+use vulkano::sync::{FlushError, GpuFuture};
 
 use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
@@ -90,7 +80,7 @@ pub fn pixel_to_screen_coordinates(
     position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
 }
 
-const MAX_VERTEX_COUNT: usize = 1000;
+const MAX_VERTEX_COUNT : usize = 1000;
 
 pub struct Renderer {
     previous_frame_end: Option<Box<dyn GpuFuture>>,
@@ -269,6 +259,7 @@ impl Renderer {
         if suboptimal {
             self.recreate_swapchain = true;
         }
+        let clear_values = vec![[0.0, 0.0, 0.0, 1.0].into()];
 
         let vertex_buffer = {
             let mut vertex_array = [Vertex::zeroed_vertex(); MAX_VERTEX_COUNT]; //todo: is there a better way to copy vertices to vertex_buffer?
@@ -277,71 +268,6 @@ impl Renderer {
             }
             Arc::new(self.vertex_buffer.next(vertex_array).unwrap())
         };
-
-        assert_eq!(
-            self.device
-                .physical_device()
-                .limits()
-                .timestamp_compute_and_graphics(),
-            1
-        );
-        let command_pool = Device::standard_command_pool(&self.device, self.queue.family());
-        let query_pool =
-            query::UnsafeQueryPool::new(self.device.clone(), query::QueryType::Timestamp, 2)
-                .unwrap();
-        let timestamp_period = self.device.physical_device().limits().timestamp_period();
-        let command_buffer_builder =
-            UnsafeCommandBufferBuilder::new(&command_pool, Kind::Primary, Flags::OneTimeSubmit)
-                .unwrap();
-        command_buffer_builder.begin_render_pass(
-            &self.framebuffers[image_num].clone(),
-            SubpassContents::Inline,
-            vec![ClearValue::Float([0.0,0.0,0.0,1.0])].iter(),
-        );
-        command_buffer_builder.begin_query(query_pool.query(0).unwrap(), true);
-        command_buffer_builder.write_timestamp(
-            query_pool.query(0).unwrap(),
-            PipelineStages {
-                top_of_pipe: true,
-                ..PipelineStages::none()
-            },
-        );
-        command_buffer_builder.end_query(query_pool.query(0).unwrap());
-        command_buffer_builder.begin_query(query_pool.query(1).unwrap(), true);
-        command_buffer_builder.write_timestamp(
-            query_pool.query(1).unwrap(),
-            PipelineStages {
-                bottom_of_pipe: true,
-                ..PipelineStages::none()
-            },
-        );
-        command_buffer_builder.end_query(query_pool.query(1).unwrap());
-        command_buffer_builder.draw()
-        command_buffer_builder.end_render_pass();
-        let query_buffer = CpuAccessibleBuffer::from_data(
-            self.device.clone(),
-            BufferUsage::all(),
-            false,
-            [0u32; 2],
-        )
-        .unwrap();
-        command_buffer_builder.copy_query_pool_results(
-            query_pool.queries_range(0, 2).unwrap(),
-            &query_buffer,
-            4,
-        );
-        let command_buffer_builder =
-            SyncCommandBufferBuilder::from_unsafe_cmd(command_buffer_builder, false, false);
-        let command_buffer = AutoCommandBufferBuilder {
-            inner: command_buffer_builder,
-            state_cacher: StateCacher::new(),
-            graphics_allowed: self.queue.family().supports_graphics(),
-            compute_allowed: self.queue.family().supports_compute(),
-            render_pass: None,
-            secondary_cb: false,
-            subpass_secondary: false,
-            flags: Flags::None,
-        }.build().unwrap();
 
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
