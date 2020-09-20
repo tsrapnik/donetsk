@@ -58,11 +58,11 @@ fn main() {
 
                 folder_tree[root].position.x = 0.5 * (dimensions[0] as f32);
                 folder_tree[root].position.y = 0.5 * (dimensions[1] as f32);
-        
+
                 let mut vertices = Vec::new();
-        
+
                 folder_tree::move_folders(&mut folder_tree, root);
-        
+
                 folder_tree::draw_folder_tree(
                     &folder_tree,
                     // &mut draw_text
