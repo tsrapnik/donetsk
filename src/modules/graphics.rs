@@ -80,7 +80,7 @@ pub fn pixel_to_screen_coordinates(
     position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
 }
 
-const MAX_VERTEX_COUNT : usize = 1000;
+const MAX_VERTEX_COUNT: usize = 1000;
 
 pub struct Renderer {
     previous_frame_end: Option<Box<dyn GpuFuture>>,
@@ -91,10 +91,10 @@ pub struct Renderer {
     vertex_buffer: CpuBufferPool<[Vertex; MAX_VERTEX_COUNT]>,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     dynamic_state: DynamicState,
-    draw_text: DrawText,
     device: Arc<Device>,
     queue: Arc<vulkano::device::Queue>,
     pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+    images: Vec<Arc<SwapchainImage<Window>>>,
 }
 
 impl Renderer {
@@ -179,7 +179,6 @@ impl Renderer {
                 .unwrap(),
         );
 
-        let draw_text = DrawText::new(device.clone(), queue.clone(), swapchain.clone(), &images);
         let previous_frame_end = Some(Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>);
         let mut dynamic_state = DynamicState {
             line_width: None,
@@ -202,15 +201,25 @@ impl Renderer {
             vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
             render_pass: render_pass,
             dynamic_state: dynamic_state,
-            draw_text: draw_text, //todo: remove.
             device: device,
             queue: queue,
             pipeline: pipeline,
+            images: images,
         }
     }
 
+    pub fn new_draw_text(&self) -> DrawText {
+        DrawText::new(
+            self.device.clone(),
+            self.queue.clone(),
+            self.swapchain.clone(),
+            &self.images,
+        )
+    }
+
     pub fn render(
-        &mut self, /*, text_buffer: &mut DrawText*/
+        &mut self,
+        mut text_buffer: DrawText,
         vertices: &mut Vec<Vertex>,
         window_resized: bool,
     ) {
@@ -235,13 +244,7 @@ impl Renderer {
                 self.render_pass.clone(),
                 &mut self.dynamic_state,
             );
-
-            self.draw_text = DrawText::new(
-                self.device.clone(),
-                self.queue.clone(),
-                self.swapchain.clone(),
-                &new_images,
-            );
+            self.images = new_images;
 
             self.recreate_swapchain = false;
         }
@@ -279,14 +282,14 @@ impl Renderer {
         .draw(
             self.pipeline.clone(),
             &self.dynamic_state,
-            vec!(vertex_buffer),
+            vec![vertex_buffer],
             (),
             (),
         )
         .unwrap()
         .end_render_pass()
         .unwrap()
-        .draw_text(&mut self.draw_text, image_num)
+        .draw_text(&mut text_buffer, image_num)
         .build()
         .unwrap();
 

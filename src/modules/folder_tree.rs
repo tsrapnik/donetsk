@@ -96,7 +96,7 @@ pub fn move_folders(folder_tree: &mut DiGraph<Node, ()>, root: NodeIndex) {
 
 pub fn draw_folder_tree(
     folder_tree: &DiGraph<Node, ()>,
-    // text_buffer: &mut DrawText,
+    text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<graphics::Vertex>,
     window_dimensions: Vector2<f32>,
 ) {
@@ -107,7 +107,7 @@ pub fn draw_folder_tree(
             folder_tree[node].position,
             folder_tree[node].color,
             Vector2::new(100.0, 100.0),
-            // text_buffer,
+            text_buffer,
             vertex_buffer,
             window_dimensions,
         );
@@ -129,17 +129,17 @@ fn draw_folder(
     position: Vector2<f32>,
     color: [f32; 3],
     size: Vector2<f32>,
-    // text_buffer: &mut DrawText,
+    text_buffer: &mut DrawText,
     vertex_buffer: &mut Vec<graphics::Vertex>,
     window_dimensions: Vector2<f32>,
 ) {
-    // text_buffer.queue_text(
-    //     position[0],
-    //     position[1],
-    //     size[1] * 0.3,
-    //     [0.6, 0.6, 0.6, 1.0],
-    //     title,
-    // );
+    text_buffer.queue_text(
+        position[0],
+        position[1],
+        size[1] * 0.3,
+        [0.6, 0.6, 0.6, 1.0],
+        title,
+    );
 
     [
         Vector2::new(position[0], position[1]),
