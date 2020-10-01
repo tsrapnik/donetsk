@@ -164,12 +164,30 @@ impl Renderer {
             )
             .unwrap()
         };
-        let render_pass = Arc::new(
+        let window_render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
                 device.clone(),
                 attachments: {
                     color: {
                         load: Clear,
+                        store: Store,
+                        format: swapchain.format(),
+                        samples: 1,
+                    }
+                },
+                pass: {
+                    color: [color],
+                    depth_stencil: {}
+                }
+            )
+            .unwrap(),
+        );
+        let text_render_pass = Arc::new(
+            vulkano::single_pass_renderpass!(
+                device.clone(),
+                attachments: {
+                    color: {
+                        load: Load,
                         store: Store,
                         format: swapchain.format(),
                         samples: 1,
@@ -191,7 +209,7 @@ impl Renderer {
                 .triangle_list()
                 .viewports_dynamic_scissors_irrelevant(1)
                 .fragment_shader(window_fragment_shader.main_entry_point(), ())
-                .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+                .render_pass(Subpass::from(window_render_pass.clone(), 0).unwrap())
                 .build(device.clone())
                 .unwrap(),
         );
@@ -199,12 +217,12 @@ impl Renderer {
         let text_fragment_shader = text_fragment_shader::Shader::load(device.clone()).unwrap();
         let text_pipeline = Arc::new(
             GraphicsPipeline::start()
-                .vertex_input_single_buffer::<WindowVertex>()
+                .vertex_input_single_buffer::<TextVertex>()
                 .vertex_shader(text_vertex_shader.main_entry_point(), ())
                 .triangle_list()
                 .viewports_dynamic_scissors_irrelevant(1)
                 .fragment_shader(text_fragment_shader.main_entry_point(), ())
-                .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+                .render_pass(Subpass::from(text_render_pass.clone(), 0).unwrap())
                 .build(device.clone())
                 .unwrap(),
         );
@@ -218,7 +236,7 @@ impl Renderer {
             reference: None,
         };
         let framebuffers =
-            Self::window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
+            Self::window_size_dependent_setup(&images, window_render_pass.clone(), &mut dynamic_state);
 
         let (set, tex_future) = {
             let (texture, tex_future) = {
@@ -255,7 +273,7 @@ impl Renderer {
                 0.0,
             )
             .unwrap();
-            let layout = window_pipeline.layout().descriptor_set_layout(0).unwrap();
+            let layout = text_pipeline.layout().descriptor_set_layout(0).unwrap();
             let set = Arc::new(
                 PersistentDescriptorSet::start(layout.clone())
                     .add_sampled_image(texture.clone(), sampler.clone())
@@ -298,7 +316,7 @@ impl Renderer {
             framebuffers: framebuffers,
             window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
             text_vertex_buffer: text_vertex_buffer,
-            render_pass: render_pass,
+            render_pass: window_render_pass,
             dynamic_state: dynamic_state,
             device: device,
             queue: queue,
