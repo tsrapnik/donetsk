@@ -97,7 +97,7 @@ pub fn move_folders(folder_tree: &mut DiGraph<Node, ()>, root: NodeIndex) {
 pub fn draw_folder_tree(
     folder_tree: &DiGraph<Node, ()>,
     text_buffer: &mut DrawText,
-    vertex_buffer: &mut Vec<graphics::Vertex>,
+    vertex_buffer: &mut Vec<graphics::WindowVertex>,
     window_dimensions: Vector2<f32>,
 ) {
     for node in folder_tree.node_indices() {
@@ -130,7 +130,7 @@ fn draw_folder(
     color: [f32; 3],
     size: Vector2<f32>,
     text_buffer: &mut DrawText,
-    vertex_buffer: &mut Vec<graphics::Vertex>,
+    vertex_buffer: &mut Vec<graphics::WindowVertex>,
     window_dimensions: Vector2<f32>,
 ) {
     text_buffer.queue_text(
@@ -152,7 +152,7 @@ fn draw_folder(
     .iter()
     .map(|x| graphics::pixel_to_screen_coordinates(*x, window_dimensions))
     .map(|p| {
-        vertex_buffer.push(graphics::Vertex {
+        vertex_buffer.push(graphics::WindowVertex {
             position: [p.x, p.y],
             color: color,
         })
@@ -163,7 +163,7 @@ fn draw_folder(
 fn draw_line(
     start: Vector2<f32>,
     end: Vector2<f32>,
-    vertex_buffer: &mut Vec<graphics::Vertex>,
+    vertex_buffer: &mut Vec<graphics::WindowVertex>,
     window_dimensions: Vector2<f32>,
 ) {
     let start = Vector2::new(start[0], start[1]);
@@ -181,7 +181,7 @@ fn draw_line(
         .iter()
         .map(|x| graphics::pixel_to_screen_coordinates(*x, window_dimensions))
         .map(|p| {
-            vertex_buffer.push(graphics::Vertex {
+            vertex_buffer.push(graphics::WindowVertex {
                 position: [p.x, p.y],
                 color: [0.5, 0.2, 0.2],
             })
