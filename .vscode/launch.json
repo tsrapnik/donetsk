@@ -8,17 +8,6 @@
             "type": "lldb",
             "request": "launch",
             "name": "debug on linux",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=donetsk",
-                    "--package=donetsk"
-                ],
-                "filter": {
-                    "name": "donetsk",
-                    "kind": "bin"
-                }
-            },
             "args": [],
             "cwd": "${workspaceFolder}"
         },
@@ -26,37 +15,14 @@
             "type": "lldb",
             "request": "launch",
             "name": "debug unit tests on linux",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=donetsk",
-                    "--package=donetsk"
-                ],
-                "filter": {
-                    "name": "donetsk",
-                    "kind": "bin"
-                }
-            },
             "args": [],
             "cwd": "${workspaceFolder}"
-        }
+        },
         {
             "type": "cppvsdbg",
             "request": "launch",
             "name": "debug on windows",
             "program": "${workspaceRoot}/target/debug/donetsk.exe",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=donetsk",
-                    "--package=donetsk"
-                ],
-                "filter": {
-                    "name": "donetsk",
-                    "kind": "bin"
-                }
-            },
             "args": [],
             "cwd": "${workspaceFolder}"
         },
@@ -64,20 +30,16 @@
             "type": "cppvsdbg",
             "request": "launch",
             "name": "debug unit tests on windows",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=donetsk",
-                    "--package=donetsk"
-                ],
-                "filter": {
-                    "name": "donetsk",
-                    "kind": "bin"
-                }
-            },
             "args": [],
             "cwd": "${workspaceFolder}"
         }
+        {
+            "type": "cppvsdbg",
+            "request": "launch",
+            "name": "debug ftn_parser on windows",
+            "program": "${workspaceRoot}/target/debug/examples/ftn_parser.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
     ]
 }
