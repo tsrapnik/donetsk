@@ -56,66 +56,28 @@ vulkano::impl_vertex!(TextVertex, position);
 pub mod window_vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
-        src: "
-#version 450
-
-layout(location = 0) in vec2 position;
-layout(location = 1) in vec3 color;
-
-layout(location = 0) out vec3 out_color;
-
-void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
-    out_color = color;
-}"
+        path: "src/modules/graphics/window_vertex_shader.vert"
     }
 }
 
 pub mod window_fragment_shader {
     vulkano_shaders::shader! {
         ty: "fragment",
-        src: "
-#version 450
-
-layout(location = 0) in vec3 color;
-layout(location = 0) out vec4 f_color;
-
-void main() {
-    f_color = vec4(color, 1.0);
-}"
+        path: "src/modules/graphics/window_fragment_shader.frag"
     }
 }
 
 pub mod text_vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
-        src: "
-#version 450
-
-layout(location = 0) in vec2 position;
-layout(location = 0) out vec2 tex_coords;
-
-void main() {
-gl_Position = vec4(position, 0.0, 1.0);
-tex_coords = position + vec2(0.5);
-}"
+        path: "src/modules/graphics/text_vertex_shader.vert"
     }
 }
 
 pub mod text_fragment_shader {
     vulkano_shaders::shader! {
         ty: "fragment",
-        src: "
-#version 450
-
-layout(location = 0) in vec2 tex_coords;
-layout(location = 0) out vec4 f_color;
-
-layout(set = 0, binding = 0) uniform sampler2D tex;
-
-void main() {
-f_color = texture(tex, tex_coords);
-}"
+        path: "src/modules/graphics/text_fragment_shader.frag"
     }
 }
 
@@ -260,7 +222,7 @@ impl Renderer {
 
         let (set, tex_future) = {
             let (texture, tex_future) = {
-                let png_bytes = include_bytes!("../font/deja_vu_sans_mono.png").to_vec();
+                let png_bytes = include_bytes!("../../font/deja_vu_sans_mono.png").to_vec();
                 let cursor = Cursor::new(png_bytes);
                 let decoder = png::Decoder::new(cursor);
                 let (info, mut reader) = decoder.read_info().unwrap();
