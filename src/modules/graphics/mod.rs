@@ -1,5 +1,3 @@
-use vulkano_text::{DrawText, DrawTextTrait};
-
 use vulkano::buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::descriptor::descriptor_set::{DescriptorSet, PersistentDescriptorSet};
@@ -331,18 +329,8 @@ impl Renderer {
         }
     }
 
-    pub fn new_draw_text(&self) -> DrawText {
-        DrawText::new(
-            self.device.clone(),
-            self.queue.clone(),
-            self.swapchain.clone(),
-            &self.images,
-        )
-    }
-
     pub fn render(
         &mut self,
-        mut text_buffer: DrawText,
         vertices: &mut Vec<WindowVertex>,
         window_resized: bool,
     ) {

@@ -1,4 +1,4 @@
-use std::{thread, time};
+use std::time;
 
 use petgraph::graph::{DiGraph, NodeIndex};
 
@@ -6,8 +6,6 @@ use nalgebra::Vector2;
 
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-
-use vulkano_text::DrawText;
 
 mod modules;
 use modules::folder_tree;
@@ -62,15 +60,12 @@ fn main() {
 
             folder_tree::move_folders(&mut folder_tree, root);
 
-            let mut draw_text = renderer.new_draw_text();
-
             folder_tree::draw_folder_tree(
                 &folder_tree,
-                &mut draw_text,
                 &mut vertices,
                 Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
             );
-            renderer.render(draw_text, &mut vertices, window_resized);
+            renderer.render(&mut vertices, window_resized);
             window_resized = false;
 
             println!("{:?}", now.elapsed());
