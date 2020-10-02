@@ -2,11 +2,9 @@ use vulkano_text::{DrawText, DrawTextTrait};
 
 use vulkano::buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
-use vulkano::descriptor::descriptor_set::{
-    PersistentDescriptorSet, PersistentDescriptorSetImg, PersistentDescriptorSetSampler,
-};
+use vulkano::descriptor::descriptor_set::{DescriptorSet, PersistentDescriptorSet};
 use vulkano::device::{Device, DeviceExtensions};
-use vulkano::format::Format;
+use vulkano::format::{Format, ClearValue};
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::{Dimensions, ImmutableImage, SwapchainImage};
 use vulkano::instance::{Instance, PhysicalDevice};
@@ -95,23 +93,19 @@ pub struct Renderer {
     surface: Arc<vulkano::swapchain::Surface<Window>>,
     recreate_swapchain: bool,
     swapchain: Arc<Swapchain<Window>>,
-    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    window_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    text_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     window_vertex_buffer: CpuBufferPool<[WindowVertex; MAX_VERTEX_COUNT]>,
     text_vertex_buffer: Arc<ImmutableBuffer<[TextVertex]>>,
-    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
+    window_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
+    text_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     dynamic_state: DynamicState,
     device: Arc<Device>,
     queue: Arc<vulkano::device::Queue>,
     window_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     text_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     images: Vec<Arc<SwapchainImage<Window>>>,
-    set: Arc<
-        //todo: simplify type.
-        PersistentDescriptorSet<(
-            ((), PersistentDescriptorSetImg<Arc<ImmutableImage<Format>>>),
-            PersistentDescriptorSetSampler,
-        )>,
-    >,
+    set: Arc<dyn DescriptorSet + Send + Sync>,
 }
 
 impl Renderer {
@@ -235,8 +229,16 @@ impl Renderer {
             write_mask: None,
             reference: None,
         };
-        let framebuffers =
-            Self::window_size_dependent_setup(&images, window_render_pass.clone(), &mut dynamic_state);
+        let window_framebuffers = Self::window_size_dependent_setup(
+            &images,
+            window_render_pass.clone(),
+            &mut dynamic_state,
+        );
+        let text_framebuffers = Self::window_size_dependent_setup(
+            &images,
+            text_render_pass.clone(),
+            &mut dynamic_state,
+        );
 
         let (set, tex_future) = {
             let (texture, tex_future) = {
@@ -313,10 +315,12 @@ impl Renderer {
             surface: surface,
             recreate_swapchain: false,
             swapchain: swapchain,
-            framebuffers: framebuffers,
+            window_framebuffers: window_framebuffers,
+            text_framebuffers: text_framebuffers,
             window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
             text_vertex_buffer: text_vertex_buffer,
-            render_pass: window_render_pass,
+            window_render_pass: window_render_pass,
+            text_render_pass: text_render_pass,
             dynamic_state: dynamic_state,
             device: device,
             queue: queue,
@@ -358,9 +362,14 @@ impl Renderer {
                 };
 
             self.swapchain = new_swapchain;
-            self.framebuffers = Self::window_size_dependent_setup(
+            self.window_framebuffers = Self::window_size_dependent_setup(
                 &new_images,
-                self.render_pass.clone(),
+                self.window_render_pass.clone(),
+                &mut self.dynamic_state,
+            );
+            self.text_framebuffers = Self::window_size_dependent_setup(
+                &new_images,
+                self.text_render_pass.clone(),
                 &mut self.dynamic_state,
             );
             self.images = new_images;
@@ -381,7 +390,6 @@ impl Renderer {
         if suboptimal {
             self.recreate_swapchain = true;
         }
-        let clear_values = vec![[0.0, 0.0, 0.0, 1.0].into()];
 
         let vertex_buffer = {
             let mut vertex_array = [WindowVertex::zeroed_vertex(); MAX_VERTEX_COUNT]; //todo: is there a better way to copy vertices to vertex_buffer?
@@ -390,6 +398,7 @@ impl Renderer {
             }
             Arc::new(self.window_vertex_buffer.next(vertex_array).unwrap())
         };
+        let clear_values = vec![[0.0, 0.0, 0.5, 1.0].into()];
 
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
@@ -397,9 +406,9 @@ impl Renderer {
         )
         .unwrap()
         .begin_render_pass(
-            self.framebuffers[image_num].clone(),
+            self.window_framebuffers[image_num].clone(),
             false,
-            clear_values.clone(),
+            clear_values,
         )
         .unwrap()
         .draw(
@@ -412,7 +421,11 @@ impl Renderer {
         .unwrap()
         .end_render_pass()
         .unwrap()
-        .begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values)
+        .begin_render_pass(
+            self.text_framebuffers[image_num].clone(),
+            false,
+            vec![ClearValue::None],
+        )
         .unwrap()
         .draw(
             self.text_pipeline.clone(),
