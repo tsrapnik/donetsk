@@ -1,31 +1,28 @@
-use vulkano::buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
-use vulkano::descriptor::descriptor_set::{DescriptorSet, PersistentDescriptorSet};
-use vulkano::device::{Device, DeviceExtensions};
-use vulkano::format::{Format, ClearValue};
-use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
-use vulkano::image::{Dimensions, ImmutableImage, SwapchainImage};
-use vulkano::instance::{Instance, PhysicalDevice};
-use vulkano::pipeline::viewport::Viewport;
-use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
-use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
-use vulkano::swapchain;
-use vulkano::swapchain::{
-    AcquireError, ColorSpace, FullscreenExclusive, PresentMode, SurfaceTransform, Swapchain,
-    SwapchainCreationError,
+use nalgebra::Vector2;
+use png;
+use std::{io::Cursor, sync::Arc};
+use vulkano::{
+    buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer},
+    command_buffer::{AutoCommandBufferBuilder, DynamicState},
+    descriptor::descriptor_set::{DescriptorSet, PersistentDescriptorSet},
+    device::{Device, DeviceExtensions},
+    format::{ClearValue, Format},
+    framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass},
+    image::{Dimensions, ImmutableImage, SwapchainImage},
+    instance::{Instance, PhysicalDevice},
+    pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
+    sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode},
+    swapchain,
+    swapchain::{
+        AcquireError, ColorSpace, FullscreenExclusive, PresentMode, SurfaceTransform, Swapchain,
+        SwapchainCreationError,
+    },
+    sync,
+    sync::{FlushError, GpuFuture},
 };
-use vulkano::sync;
-use vulkano::sync::{FlushError, GpuFuture};
-
 use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
-
-use std::{io::Cursor, sync::Arc};
-
-use nalgebra::Vector2;
-
-use png;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct WindowVertex {
@@ -33,15 +30,6 @@ pub struct WindowVertex {
     pub color: [f32; 3],
 }
 vulkano::impl_vertex!(WindowVertex, position, color);
-
-impl WindowVertex {
-    pub fn zeroed_vertex() -> WindowVertex {
-        WindowVertex {
-            position: [0.0; 2],
-            color: [0.0; 3],
-        }
-    }
-}
 
 #[derive(Default, Debug, Clone)]
 struct TextVertex {
@@ -87,27 +75,30 @@ pub fn pixel_to_screen_coordinates(
 const MAX_VERTEX_COUNT: usize = 1000;
 
 pub struct Renderer {
-    previous_frame_end: Option<Box<dyn GpuFuture>>,
-    surface: Arc<vulkano::swapchain::Surface<Window>>,
-    recreate_swapchain: bool,
-    swapchain: Arc<Swapchain<Window>>,
-    window_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    text_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    window_vertex_buffer: CpuBufferPool<[WindowVertex; MAX_VERTEX_COUNT]>,
-    text_vertex_buffer: Arc<ImmutableBuffer<[TextVertex]>>,
-    window_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    text_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    dynamic_state: DynamicState,
     device: Arc<Device>,
     queue: Arc<vulkano::device::Queue>,
+    swapchain: Arc<Swapchain<Window>>,
+
+    dynamic_state: DynamicState,
+
+    window_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     window_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+    window_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    window_vertex_buffer: CpuBufferPool<[WindowVertex; MAX_VERTEX_COUNT]>,
+
+    text_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     text_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
-    images: Vec<Arc<SwapchainImage<Window>>>,
-    set: Arc<dyn DescriptorSet + Send + Sync>,
+    text_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    text_vertex_buffer: Arc<ImmutableBuffer<[TextVertex]>>,
+    text_set: Arc<dyn DescriptorSet + Send + Sync>,
+
+    previous_frame_end: Option<Box<dyn GpuFuture>>,
+    recreate_swapchain: bool,
 }
 
 impl Renderer {
     pub fn new(event_loop: &EventLoop<()>) -> Renderer {
+        //objects used by all renderpasses
         let extensions = vulkano_win::required_extensions();
         let instance = Instance::new(None, &extensions, None).unwrap();
         let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
@@ -130,7 +121,6 @@ impl Renderer {
             [(queue_family, 0.5)].iter().cloned(),
         )
         .unwrap();
-
         let queue = queues.next().unwrap();
         let initial_dimensions: [u32; 2] = window.inner_size().into();
         let (swapchain, images) = {
@@ -156,30 +146,23 @@ impl Renderer {
             )
             .unwrap()
         };
+
+        let mut dynamic_state = DynamicState {
+            line_width: None,
+            viewports: None,
+            scissors: None,
+            compare_mask: None,
+            write_mask: None,
+            reference: None,
+        };
+
+        //objects used by window render pass
         let window_render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
                 device.clone(),
                 attachments: {
                     color: {
                         load: Clear,
-                        store: Store,
-                        format: swapchain.format(),
-                        samples: 1,
-                    }
-                },
-                pass: {
-                    color: [color],
-                    depth_stencil: {}
-                }
-            )
-            .unwrap(),
-        );
-        let text_render_pass = Arc::new(
-            vulkano::single_pass_renderpass!(
-                device.clone(),
-                attachments: {
-                    color: {
-                        load: Load,
                         store: Store,
                         format: swapchain.format(),
                         samples: 1,
@@ -205,6 +188,31 @@ impl Renderer {
                 .build(device.clone())
                 .unwrap(),
         );
+        let window_framebuffers = Self::window_size_dependent_setup(
+            &images,
+            window_render_pass.clone(),
+            &mut dynamic_state,
+        );
+
+        //objects used by text render pass
+        let text_render_pass = Arc::new(
+            vulkano::single_pass_renderpass!(
+                device.clone(),
+                attachments: {
+                    color: {
+                        load: Load,
+                        store: Store,
+                        format: swapchain.format(),
+                        samples: 1,
+                    }
+                },
+                pass: {
+                    color: [color],
+                    depth_stencil: {}
+                }
+            )
+            .unwrap(),
+        );
         let text_vertex_shader = text_vertex_shader::Shader::load(device.clone()).unwrap();
         let text_fragment_shader = text_fragment_shader::Shader::load(device.clone()).unwrap();
         let text_pipeline = Arc::new(
@@ -218,27 +226,35 @@ impl Renderer {
                 .build(device.clone())
                 .unwrap(),
         );
-
-        let mut dynamic_state = DynamicState {
-            line_width: None,
-            viewports: None,
-            scissors: None,
-            compare_mask: None,
-            write_mask: None,
-            reference: None,
-        };
-        let window_framebuffers = Self::window_size_dependent_setup(
-            &images,
-            window_render_pass.clone(),
-            &mut dynamic_state,
-        );
         let text_framebuffers = Self::window_size_dependent_setup(
             &images,
             text_render_pass.clone(),
             &mut dynamic_state,
         );
 
-        let (set, tex_future) = {
+        let (text_vertex_buffer, _) = ImmutableBuffer::from_iter(
+            [
+                TextVertex {
+                    position: [-0.5, -0.5],
+                },
+                TextVertex {
+                    position: [-0.5, 0.5],
+                },
+                TextVertex {
+                    position: [0.5, -0.5],
+                },
+                TextVertex {
+                    position: [0.5, 0.5],
+                },
+            ]
+            .iter()
+            .cloned(),
+            BufferUsage::all(),
+            queue.clone(),
+        )
+        .unwrap();
+
+        let (text_set, tex_future) = {
             let (texture, tex_future) = {
                 let png_bytes = include_bytes!("../../font/deja_vu_sans_mono.png").to_vec();
                 let cursor = Cursor::new(png_bytes);
@@ -283,63 +299,39 @@ impl Renderer {
             );
             (set, tex_future)
         };
-        let previous_frame_end = Some(Box::new(tex_future) as Box<dyn GpuFuture>);
 
-        let (text_vertex_buffer, _) = ImmutableBuffer::from_iter(
-            [
-                TextVertex {
-                    position: [-0.5, -0.5],
-                },
-                TextVertex {
-                    position: [-0.5, 0.5],
-                },
-                TextVertex {
-                    position: [0.5, -0.5],
-                },
-                TextVertex {
-                    position: [0.5, 0.5],
-                },
-            ]
-            .iter()
-            .cloned(),
-            BufferUsage::all(),
-            queue.clone(),
-        )
-        .unwrap();
+        let previous_frame_end = Some(Box::new(tex_future) as Box<dyn GpuFuture>);
 
         //move all the stuff we need to keep for rendering in the renderer struct.
         Renderer {
-            previous_frame_end: previous_frame_end,
-            surface: surface,
-            recreate_swapchain: false,
-            swapchain: swapchain,
-            window_framebuffers: window_framebuffers,
-            text_framebuffers: text_framebuffers,
-            window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
-            text_vertex_buffer: text_vertex_buffer,
-            window_render_pass: window_render_pass,
-            text_render_pass: text_render_pass,
-            dynamic_state: dynamic_state,
-            device: device,
+            device: device.clone(),
             queue: queue,
+            swapchain: swapchain,
+
+            dynamic_state: dynamic_state,
+
+            window_render_pass: window_render_pass,
             window_pipeline: window_pipeline,
+            window_framebuffers: window_framebuffers,
+            window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
+
+            text_render_pass: text_render_pass,
             text_pipeline: text_pipeline,
-            images: images,
-            set: set,
+            text_framebuffers: text_framebuffers,
+            text_vertex_buffer: text_vertex_buffer,
+            text_set: text_set,
+
+            previous_frame_end: previous_frame_end,
+            recreate_swapchain: false,
         }
     }
 
-    pub fn render(
-        &mut self,
-        vertices: &mut Vec<WindowVertex>,
-        window_resized: bool,
-    ) {
+    pub fn render(&mut self, vertices: &mut Vec<WindowVertex>, window_resized: bool) {
         self.recreate_swapchain |= window_resized;
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
-        let window = self.surface.window();
-        let dimensions: [u32; 2] = window.inner_size().into();
+        let dimensions: [u32; 2] = self.swapchain.surface().window().inner_size().into();
 
         if self.recreate_swapchain {
             let (new_swapchain, new_images) =
@@ -360,7 +352,6 @@ impl Renderer {
                 self.text_render_pass.clone(),
                 &mut self.dynamic_state,
             );
-            self.images = new_images;
 
             self.recreate_swapchain = false;
         }
@@ -380,7 +371,8 @@ impl Renderer {
         }
 
         let vertex_buffer = {
-            let mut vertex_array = [WindowVertex::zeroed_vertex(); MAX_VERTEX_COUNT]; //todo: is there a better way to copy vertices to vertex_buffer?
+            let mut vertex_array: [WindowVertex; MAX_VERTEX_COUNT] =
+                [Default::default(); MAX_VERTEX_COUNT]; //todo: is there a better way to copy vertices to vertex_buffer?
             for (index, vertex) in vertices.iter().enumerate() {
                 vertex_array[index] = *vertex;
             }
@@ -419,7 +411,7 @@ impl Renderer {
             self.text_pipeline.clone(),
             &self.dynamic_state,
             vec![self.text_vertex_buffer.clone()],
-            self.set.clone(),
+            self.text_set.clone(),
             (),
         )
         .unwrap()
@@ -453,7 +445,7 @@ impl Renderer {
         }
     }
 
-    /// This method is called once during initialization, then again whenever the window is resized
+    //this method is called once during initialization, then again whenever the window is resized.
     fn window_size_dependent_setup(
         images: &[Arc<SwapchainImage<Window>>],
         render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
