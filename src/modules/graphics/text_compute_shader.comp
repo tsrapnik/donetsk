@@ -1,0 +1,31 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) buffer Output {
+    vec2 pos[];
+} triangles;
+
+layout(set = 0, binding = 1) buffer IndirectDrawArgs {
+    uint vertices;
+    uint unused0;
+    uint unused1;
+    uint unused2;
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    // each thread of compute shader is going to increment the counter, so we need to use atomic
+    // operations for safety. The previous value of the counter is returned so that gives us
+    // the offset into the vertex buffer this thread can write it's vertices into.
+    uint offset = atomicAdd(vertices, 6);
+
+    vec2 center = vec2(-0.8, -0.8) + idx * vec2(0.1, 0.1);
+    triangles.pos[offset + 0] = center + vec2(0.0, 0.0375);
+    triangles.pos[offset + 1] = center + vec2(0.025, -0.01725);
+    triangles.pos[offset + 2] = center + vec2(-0.025, -0.01725);
+    triangles.pos[offset + 3] = center + vec2(0.0, -0.0375);
+    triangles.pos[offset + 4] = center + vec2(0.025, 0.01725);
+    triangles.pos[offset + 5] = center + vec2(-0.025, 0.01725);
+}

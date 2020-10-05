@@ -1,16 +1,20 @@
 use nalgebra::Vector2;
 use png;
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer},
-    command_buffer::{AutoCommandBufferBuilder, DynamicState},
-    descriptor::descriptor_set::{DescriptorSet, PersistentDescriptorSet},
+    command_buffer::{AutoCommandBufferBuilder, DrawIndirectCommand, DynamicState},
+    descriptor::{
+        descriptor_set::{DescriptorSet, PersistentDescriptorSet},
+        pipeline_layout::PipelineLayout,
+        PipelineLayoutAbstract,
+    },
     device::{Device, DeviceExtensions},
     format::{ClearValue, Format},
     framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass},
-    image::{Dimensions, ImmutableImage, SwapchainImage, ImageUsage},
+    image::{Dimensions, ImageUsage, ImmutableImage, SwapchainImage},
     instance::{Instance, PhysicalDevice},
-    pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
+    pipeline::{viewport::Viewport, ComputePipeline, GraphicsPipeline, GraphicsPipelineAbstract},
     sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode},
     swapchain,
     swapchain::{
@@ -65,6 +69,13 @@ pub mod text_fragment_shader {
     }
 }
 
+pub mod text_compute_shader {
+    vulkano_shaders::shader! {
+        ty: "compute",
+        path: "src/modules/graphics/text_compute_shader.comp"
+    }
+}
+
 pub fn pixel_to_screen_coordinates(
     position: Vector2<f32>,
     window_dimensions: Vector2<f32>,
@@ -86,10 +97,13 @@ pub struct Renderer {
     window_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     window_vertex_buffer: CpuBufferPool<[WindowVertex; MAX_VERTEX_COUNT]>,
 
+    text_compute_pipeline: Arc<ComputePipeline<PipelineLayout<text_compute_shader::Layout>>>,
+    text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
+    text_vertex_pool: CpuBufferPool<TextVertex>,
+
     text_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    text_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+    text_render_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     text_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    text_vertex_buffer: Arc<ImmutableBuffer<[TextVertex]>>,
     text_set: Arc<dyn DescriptorSet + Send + Sync>,
 
     previous_frame_end: Option<Box<dyn GpuFuture>>,
@@ -112,6 +126,7 @@ impl Renderer {
             .unwrap();
         let device_ext = DeviceExtensions {
             khr_swapchain: true,
+            khr_storage_buffer_storage_class: true,
             ..DeviceExtensions::none()
         };
         let (device, mut queues) = Device::new(
@@ -193,6 +208,17 @@ impl Renderer {
             &mut dynamic_state,
         );
 
+        //objects used by text compute pass
+        let text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
+            CpuBufferPool::new(device.clone(), BufferUsage::all());
+        let text_vertex_pool: CpuBufferPool<TextVertex> =
+            CpuBufferPool::new(device.clone(), BufferUsage::all());
+        let text_compute_shader = text_compute_shader::Shader::load(device.clone()).unwrap();
+        let text_compute_pipeline = Arc::new(
+            ComputePipeline::new(device.clone(), &text_compute_shader.main_entry_point(), &())
+                .unwrap(),
+        );
+
         //objects used by text render pass
         let text_render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
@@ -214,7 +240,7 @@ impl Renderer {
         );
         let text_vertex_shader = text_vertex_shader::Shader::load(device.clone()).unwrap();
         let text_fragment_shader = text_fragment_shader::Shader::load(device.clone()).unwrap();
-        let text_pipeline = Arc::new(
+        let text_render_pipeline = Arc::new(
             GraphicsPipeline::start()
                 .vertex_input_single_buffer::<TextVertex>()
                 .vertex_shader(text_vertex_shader.main_entry_point(), ())
@@ -230,28 +256,6 @@ impl Renderer {
             text_render_pass.clone(),
             &mut dynamic_state,
         );
-
-        let (text_vertex_buffer, _) = ImmutableBuffer::from_iter(
-            [
-                TextVertex {
-                    position: [-0.5, -0.5],
-                },
-                TextVertex {
-                    position: [-0.5, 0.5],
-                },
-                TextVertex {
-                    position: [0.5, -0.5],
-                },
-                TextVertex {
-                    position: [0.5, 0.5],
-                },
-            ]
-            .iter()
-            .cloned(),
-            BufferUsage::all(),
-            queue.clone(),
-        )
-        .unwrap();
 
         let (text_set, tex_future) = {
             let (texture, tex_future) = {
@@ -288,7 +292,10 @@ impl Renderer {
                 0.0,
             )
             .unwrap();
-            let layout = text_pipeline.layout().descriptor_set_layout(0).unwrap();
+            let layout = text_render_pipeline
+                .layout()
+                .descriptor_set_layout(0)
+                .unwrap();
             let set = Arc::new(
                 PersistentDescriptorSet::start(layout.clone())
                     .add_sampled_image(texture.clone(), sampler.clone())
@@ -314,10 +321,13 @@ impl Renderer {
             window_framebuffers: window_framebuffers,
             window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
 
+            text_compute_pipeline: text_compute_pipeline,
+            text_indirect_args_pool: text_indirect_args_pool,
+            text_vertex_pool: text_vertex_pool,
+
             text_render_pass: text_render_pass,
-            text_pipeline: text_pipeline,
+            text_render_pipeline: text_render_pipeline,
             text_framebuffers: text_framebuffers,
-            text_vertex_buffer: text_vertex_buffer,
             text_set: text_set,
 
             previous_frame_end: previous_frame_end,
@@ -379,6 +389,35 @@ impl Renderer {
         };
         let clear_values = vec![[0.0, 0.0, 0.5, 1.0].into()];
 
+        //text compute pass stuff
+        let text_indirect_args = self
+            .text_indirect_args_pool
+            .chunk(iter::once(DrawIndirectCommand {
+                vertex_count: 0,
+                instance_count: 1,
+                first_vertex: 0,
+                first_instance: 0,
+            }))
+            .unwrap();
+        let text_vertices = self
+            .text_vertex_pool
+            .chunk((0..(6 * 16)).map(|_| TextVertex { position: [0.0; 2] }))
+            .unwrap();
+        let layout = self
+            .text_compute_pipeline
+            .layout()
+            .descriptor_set_layout(0)
+            .unwrap();
+        let text_compute_descriptor_set = Arc::new(
+            PersistentDescriptorSet::start(layout.clone())
+                .add_buffer(text_vertices.clone())
+                .unwrap()
+                .add_buffer(text_indirect_args.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+
         let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
             self.queue.family(),
@@ -386,38 +425,49 @@ impl Renderer {
         .unwrap();
 
         builder
-        .begin_render_pass(
-            self.window_framebuffers[image_num].clone(),
-            false,
-            clear_values,
-        )
-        .unwrap()
-        .draw(
-            self.window_pipeline.clone(),
-            &self.dynamic_state,
-            vec![vertex_buffer],
-            (),
-            (),
-        )
-        .unwrap()
-        .end_render_pass()
-        .unwrap()
-        .begin_render_pass(
-            self.text_framebuffers[image_num].clone(),
-            false,
-            vec![ClearValue::None],
-        )
-        .unwrap()
-        .draw(
-            self.text_pipeline.clone(),
-            &self.dynamic_state,
-            vec![self.text_vertex_buffer.clone()],
-            self.text_set.clone(),
-            (),
-        )
-        .unwrap()
-        .end_render_pass()
-        .unwrap();
+            //window render pass
+            .begin_render_pass(
+                self.window_framebuffers[image_num].clone(),
+                false,
+                clear_values,
+            )
+            .unwrap()
+            .draw(
+                self.window_pipeline.clone(),
+                &self.dynamic_state,
+                vec![vertex_buffer],
+                (),
+                (),
+            )
+            .unwrap()
+            .end_render_pass()
+            .unwrap()
+            //text compute pass
+            .dispatch(
+                [1, 1, 1],
+                self.text_compute_pipeline.clone(),
+                text_compute_descriptor_set.clone(),
+                (),
+            )
+            .unwrap()
+            //text render pass
+            .begin_render_pass(
+                self.text_framebuffers[image_num].clone(),
+                false,
+                vec![ClearValue::None],
+            )
+            .unwrap()
+            .draw_indirect(
+                self.text_render_pipeline.clone(),
+                &self.dynamic_state,
+                vec![Arc::new(text_vertices)],
+                text_indirect_args.clone(),
+                self.text_set.clone(),
+                (),
+            )
+            .unwrap()
+            .end_render_pass()
+            .unwrap();
         let command_buffer = builder.build().unwrap();
 
         let future = self
