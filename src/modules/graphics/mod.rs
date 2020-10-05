@@ -8,7 +8,7 @@ use vulkano::{
     device::{Device, DeviceExtensions},
     format::{ClearValue, Format},
     framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass},
-    image::{Dimensions, ImmutableImage, SwapchainImage},
+    image::{Dimensions, ImmutableImage, SwapchainImage, ImageUsage},
     instance::{Instance, PhysicalDevice},
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
     sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode},
@@ -125,7 +125,6 @@ impl Renderer {
         let initial_dimensions: [u32; 2] = window.inner_size().into();
         let (swapchain, images) = {
             let caps = surface.capabilities(physical).unwrap();
-            let usage = caps.supported_usage_flags;
             let alpha = caps.supported_composite_alpha.iter().next().unwrap();
             let format = caps.supported_formats[0].0;
             Swapchain::new(
@@ -135,7 +134,7 @@ impl Renderer {
                 format,
                 initial_dimensions,
                 1,
-                usage,
+                ImageUsage::color_attachment(),
                 &queue,
                 SurfaceTransform::Identity,
                 alpha,
@@ -380,11 +379,13 @@ impl Renderer {
         };
         let clear_values = vec![[0.0, 0.0, 0.5, 1.0].into()];
 
-        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+        let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
             self.queue.family(),
         )
-        .unwrap()
+        .unwrap();
+
+        builder
         .begin_render_pass(
             self.window_framebuffers[image_num].clone(),
             false,
@@ -416,9 +417,8 @@ impl Renderer {
         )
         .unwrap()
         .end_render_pass()
-        .unwrap()
-        .build()
         .unwrap();
+        let command_buffer = builder.build().unwrap();
 
         let future = self
             .previous_frame_end

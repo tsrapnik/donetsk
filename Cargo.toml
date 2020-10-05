@@ -5,10 +5,10 @@ authors = ["tsrapnik <yannick-peeters@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-vulkano = "0.17"
-vulkano-shaders = "0.17"
-vulkano-win = "0.17"
-winit = "0.21"
+vulkano = "0.19"
+vulkano-shaders = "0.19"
+vulkano-win = "0.19"
+winit = "0.22"
 petgraph = "0.4.13"
 rand = "0.7.0"
 nalgebra = "0.18"
