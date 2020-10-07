@@ -1,12 +1,31 @@
 #version 450
 
+const uint glyph_layouts_size = 128;
+const float advance = 0.1015625;
+
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-layout(set = 0, binding = 0) buffer Output {
-    vec2 pos[];
-} triangles;
+struct GlyphLayout {
+    vec2 origin;
+    vec2 size;
+    vec2 offset;
+    float advance;
+};
 
-layout(set = 0, binding = 1) buffer IndirectDrawArgs {
+struct TextVertex {
+    vec2 position;
+    vec2 texture_position;
+};
+
+layout(set = 0, binding = 0) uniform GlyphBuffer {
+    GlyphLayout glyph_layouts[glyph_layouts_size];
+};
+
+layout(set = 0, binding = 1) buffer Output {
+    TextVertex text_vertex_buffer[];
+};
+
+layout(set = 0, binding = 2) buffer IndirectDrawArgs {
     uint vertices;
     uint unused0;
     uint unused1;
@@ -16,16 +35,25 @@ layout(set = 0, binding = 1) buffer IndirectDrawArgs {
 void main() {
     uint idx = gl_GlobalInvocationID.x;
 
-    // each thread of compute shader is going to increment the counter, so we need to use atomic
-    // operations for safety. The previous value of the counter is returned so that gives us
-    // the offset into the vertex buffer this thread can write it's vertices into.
+    // if index is not in glyp_layouts table, just map it to its last element to avoid reading out of bounds (last element is delete and won't get rendered).
+    uint glyph_index = min(idx + 97, glyph_layouts_size - 1);
+
     uint offset = atomicAdd(vertices, 6);
 
-    vec2 center = vec2(-0.8, -0.8) + idx * vec2(0.1, 0.1);
-    triangles.pos[offset + 0] = center + vec2(0.0, 0.0375);
-    triangles.pos[offset + 1] = center + vec2(0.025, -0.01725);
-    triangles.pos[offset + 2] = center + vec2(-0.025, -0.01725);
-    triangles.pos[offset + 3] = center + vec2(0.0, -0.0375);
-    triangles.pos[offset + 4] = center + vec2(0.025, 0.01725);
-    triangles.pos[offset + 5] = center + vec2(-0.025, 0.01725);
+    vec2 texture_origin = glyph_layouts[glyph_index].origin;
+    vec3 size = vec3(glyph_layouts[glyph_index].size, 0.0);
+    text_vertex_buffer[offset + 0].texture_position = texture_origin + size.zz;
+    text_vertex_buffer[offset + 1].texture_position = texture_origin + size.xz;
+    text_vertex_buffer[offset + 2].texture_position = texture_origin + size.zy;
+    text_vertex_buffer[offset + 3].texture_position = texture_origin + size.xz;
+    text_vertex_buffer[offset + 4].texture_position = texture_origin + size.zy;
+    text_vertex_buffer[offset + 5].texture_position = texture_origin + size.xy;
+
+    vec2 render_origin = vec2(offset * advance - 1.0, 0.0);
+    text_vertex_buffer[offset + 0].position = render_origin + size.zz;
+    text_vertex_buffer[offset + 1].position = render_origin + size.xz;
+    text_vertex_buffer[offset + 2].position = render_origin + size.zy;
+    text_vertex_buffer[offset + 3].position = render_origin + size.xz;
+    text_vertex_buffer[offset + 4].position = render_origin + size.zy;
+    text_vertex_buffer[offset + 5].position = render_origin + size.xy;
 }

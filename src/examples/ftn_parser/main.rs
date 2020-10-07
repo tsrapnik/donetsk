@@ -1,6 +1,7 @@
-use std::{env, fs, path::Path, fmt::Write};
+use std::{env, fmt::Write, fs, path::Path};
 
 fn main() {
+    const ASCII_TABLE_LENGHT: usize = 128;
     let mut fnt_path = env::current_dir().unwrap();
     fnt_path.push(Path::new("src/font/deja_vu_sans_mono.fnt"));
     let fnt_file = fs::read_to_string(fnt_path).unwrap();
@@ -9,15 +10,13 @@ fn main() {
 
     #[derive(Default, Copy, Clone, Debug)]
     struct GlyphLayout {
-        x: u32,
-        y: u32,
-        width: u32,
-        height: u32,
-        x_offset: i32,
-        y_offset: i32,
-        x_advance: u32,
+        origin: [f32; 2],
+        size: [f32; 2],
+        offset: [f32; 2],
+        advance: f32,
     }
-    let mut glyph_layouts: [GlyphLayout; 128] = [Default::default(); 128];
+    let mut glyph_layouts: [GlyphLayout; ASCII_TABLE_LENGHT] =
+        [Default::default(); ASCII_TABLE_LENGHT];
 
     let lines = fnt_file.lines();
     for line in lines {
@@ -34,25 +33,17 @@ fn main() {
             }
 
             Some("char") => {
-                let mut glyph_layout = GlyphLayout {
-                    x: 0,
-                    y: 0,
-                    width: 0,
-                    height: 0,
-                    x_offset: 0,
-                    y_offset: 0,
-                    x_advance: 0,
-                };
-                let mut index: usize = 0;
+                let mut glyph_layout = GlyphLayout::default();
+                let mut index = usize::default();
                 for key_value_pair in word_groups {
                     match to_key_and_value(key_value_pair) {
-                        ("x", value) => glyph_layout.x = value as u32,
-                        ("y", value) => glyph_layout.y = value as u32,
-                        ("width", value) => glyph_layout.width = value as u32,
-                        ("height", value) => glyph_layout.height = value as u32,
-                        ("xoffset", value) => glyph_layout.x_offset = value as i32,
-                        ("yoffset", value) => glyph_layout.y_offset = value as i32,
-                        ("xadvance", value) => glyph_layout.x_advance = value as u32,
+                        ("x", value) => glyph_layout.origin[0] = (value as f32) / 512.0,
+                        ("y", value) => glyph_layout.origin[1] = (value as f32) / 512.0,
+                        ("width", value) => glyph_layout.size[0] = (value as f32) / 512.0,
+                        ("height", value) => glyph_layout.size[1] = (value as f32) / 512.0,
+                        ("xoffset", value) => glyph_layout.offset[0] = (value as f32) / 512.0,
+                        ("yoffset", value) => glyph_layout.offset[1] = (value as f32) / 512.0,
+                        ("xadvance", value) => glyph_layout.advance = (value as f32) / 512.0,
                         ("id", value) => index = value as usize,
                         _ => {}
                     }
@@ -64,16 +55,35 @@ fn main() {
         }
     }
 
-    let mut output_string = String::from("//todo:");
-    write!(&mut output_string, "let line_height = {}u32;\n", line_height).unwrap();
-    output_string += "let glyph_layouts = [\n";
-    for glyph_layout in glyph_layouts.iter(){
+    let mut output_string = String::from(
+        "
+#[derive(Default, Copy, Clone, Debug)]
+pub struct GlyphLayout {
+    origin: [f32; 2], //where in texture the glyph is located
+    size: [f32; 2], //size of the glyph
+    offset: [f32; 2], //offset from the cursor where the glyp should be rendered
+    advance: f32, //offset the cursor should move horizontally for next glyph
+}\n\n",
+    );
+    write!(
+        &mut output_string,
+        "pub const LINE_HEIGHT: u32 = {};\n",
+        line_height,
+    )
+    .unwrap();
+    write!(
+        &mut output_string,
+        "pub const GLYPH_LAYOUTS: [GlyphLayout; {}] = [\n",
+        ASCII_TABLE_LENGHT,
+    )
+    .unwrap();
+    for glyph_layout in glyph_layouts.iter() {
         write!(&mut output_string, "    {:?},\n", glyph_layout).unwrap();
     }
     output_string += "];";
 
     let mut output_path = env::current_dir().unwrap();
-    output_path.push(Path::new("src/font/font.rs"));
+    output_path.push(Path::new("src/font/mod.rs"));
     fs::write(output_path, output_string).unwrap();
 }
 

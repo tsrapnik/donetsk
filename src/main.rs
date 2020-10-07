@@ -7,6 +7,7 @@ use nalgebra::Vector2;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 
+mod font;
 mod modules;
 use modules::folder_tree;
 use modules::graphics;

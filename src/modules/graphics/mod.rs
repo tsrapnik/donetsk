@@ -1,8 +1,9 @@
+use crate::font;
 use nalgebra::Vector2;
 use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
-    buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer},
+    buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer, CpuAccessibleBuffer, DeviceLocalBuffer},
     command_buffer::{AutoCommandBufferBuilder, DrawIndirectCommand, DynamicState},
     descriptor::{
         descriptor_set::{DescriptorSet, PersistentDescriptorSet},
@@ -35,11 +36,12 @@ pub struct WindowVertex {
 }
 vulkano::impl_vertex!(WindowVertex, position, color);
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 struct TextVertex {
     position: [f32; 2],
+    texture_position: [f32; 2],
 }
-vulkano::impl_vertex!(TextVertex, position);
+vulkano::impl_vertex!(TextVertex, position, texture_position);
 
 pub mod window_vertex_shader {
     vulkano_shaders::shader! {
@@ -98,6 +100,7 @@ pub struct Renderer {
     window_vertex_buffer: CpuBufferPool<[WindowVertex; MAX_VERTEX_COUNT]>,
 
     text_compute_pipeline: Arc<ComputePipeline<PipelineLayout<text_compute_shader::Layout>>>,
+    text_glyph_buffer: Arc<ImmutableBuffer<[font::GlyphLayout; font::GLYPH_LAYOUTS.len()]>>,
     text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
     text_vertex_pool: CpuBufferPool<TextVertex>,
 
@@ -209,6 +212,8 @@ impl Renderer {
         );
 
         //objects used by text compute pass
+        let (text_glyph_buffer, _) = //todo: use future.
+            ImmutableBuffer::from_data(font::GLYPH_LAYOUTS, BufferUsage::all(), queue.clone()).unwrap();
         let text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
         let text_vertex_pool: CpuBufferPool<TextVertex> =
@@ -322,6 +327,7 @@ impl Renderer {
             window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
 
             text_compute_pipeline: text_compute_pipeline,
+            text_glyph_buffer: text_glyph_buffer,
             text_indirect_args_pool: text_indirect_args_pool,
             text_vertex_pool: text_vertex_pool,
 
@@ -401,7 +407,7 @@ impl Renderer {
             .unwrap();
         let text_vertices = self
             .text_vertex_pool
-            .chunk((0..(6 * 16)).map(|_| TextVertex { position: [0.0; 2] }))
+            .chunk((0..(6 * 16)).map(|_| TextVertex::default()))
             .unwrap();
         let layout = self
             .text_compute_pipeline
@@ -410,6 +416,8 @@ impl Renderer {
             .unwrap();
         let text_compute_descriptor_set = Arc::new(
             PersistentDescriptorSet::start(layout.clone())
+                .add_buffer(self.text_glyph_buffer.clone())
+                .unwrap()
                 .add_buffer(text_vertices.clone())
                 .unwrap()
                 .add_buffer(text_indirect_args.clone())
@@ -460,7 +468,7 @@ impl Renderer {
             .draw_indirect(
                 self.text_render_pipeline.clone(),
                 &self.dynamic_state,
-                vec![Arc::new(text_vertices)],
+                vec![Arc::new(text_vertices.clone())],
                 text_indirect_args.clone(),
                 self.text_set.clone(),
                 (),
