@@ -252,6 +252,7 @@ impl Renderer {
                 .triangle_list()
                 .viewports_dynamic_scissors_irrelevant(1)
                 .fragment_shader(text_fragment_shader.main_entry_point(), ())
+                .blend_alpha_blending()
                 .render_pass(Subpass::from(text_render_pass.clone(), 0).unwrap())
                 .build(device.clone())
                 .unwrap(),
