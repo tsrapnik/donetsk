@@ -1,7 +1,7 @@
 #version 450
 
 const uint glyph_layouts_size = 128;
-const float advance = 0.1015625;
+const float advance = 0.075;
 
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
@@ -14,7 +14,7 @@ struct GlyphLayout {
 
 struct TextVertex {
     vec2 position;
-    vec2 texture_position;
+    vec2 texture_coordinates;
 };
 
 layout(set = 0, binding = 0) uniform GlyphBuffer {
@@ -40,12 +40,12 @@ void main() {
 
     vec3 size = vec3(glyph_layouts[glyph_index].size, 0.0);
     vec2 texture_origin = glyph_layouts[glyph_index].origin;
-    text_vertex_buffer[offset + 0].texture_position = texture_origin + size.zz;
-    text_vertex_buffer[offset + 1].texture_position = texture_origin + size.xz;
-    text_vertex_buffer[offset + 2].texture_position = texture_origin + size.zy;
-    text_vertex_buffer[offset + 3].texture_position = texture_origin + size.xz;
-    text_vertex_buffer[offset + 4].texture_position = texture_origin + size.zy;
-    text_vertex_buffer[offset + 5].texture_position = texture_origin + size.xy;
+    text_vertex_buffer[offset + 0].texture_coordinates = texture_origin + size.zz;
+    text_vertex_buffer[offset + 1].texture_coordinates = texture_origin + size.xz;
+    text_vertex_buffer[offset + 2].texture_coordinates = texture_origin + size.zy;
+    text_vertex_buffer[offset + 3].texture_coordinates = texture_origin + size.xz;
+    text_vertex_buffer[offset + 4].texture_coordinates = texture_origin + size.zy;
+    text_vertex_buffer[offset + 5].texture_coordinates = texture_origin + size.xy;
 
     vec2 render_origin = 3.0 * (glyph_layouts[glyph_index].offset + vec2(float(gl_GlobalInvocationID.x) * advance, 0.0)) + vec2(-1.0, 0.0);
     text_vertex_buffer[offset + 0].position = render_origin + 3.0 * size.zz;

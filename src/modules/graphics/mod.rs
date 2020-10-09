@@ -39,9 +39,9 @@ vulkano::impl_vertex!(WindowVertex, position, color);
 #[derive(Default, Debug, Clone, Copy)]
 struct TextVertex {
     position: [f32; 2],
-    texture_position: [f32; 2],
+    texture_coordinates: [f32; 2],
 }
-vulkano::impl_vertex!(TextVertex, position, texture_position);
+vulkano::impl_vertex!(TextVertex, position, texture_coordinates);
 
 pub mod window_vertex_shader {
     vulkano_shaders::shader! {
@@ -263,8 +263,8 @@ impl Renderer {
             &mut dynamic_state,
         );
 
-        let (text_set, tex_future) = {
-            let (texture, tex_future) = {
+        let (text_set, text_future) = {
+            let (font_atlas, text_future) = {
                 let png_bytes = include_bytes!("../../font/deja_vu_sans_mono.png").to_vec();
                 let cursor = Cursor::new(png_bytes);
                 let decoder = png::Decoder::new(cursor);
@@ -279,7 +279,7 @@ impl Renderer {
                 ImmutableImage::from_iter(
                     image_data.iter().cloned(),
                     dimensions,
-                    Format::R8G8B8A8Srgb,
+                    Format::R8G8B8A8Srgb, //todo: change to r8 file format.
                     queue.clone(),
                 )
                 .unwrap()
@@ -304,15 +304,15 @@ impl Renderer {
                 .unwrap();
             let set = Arc::new(
                 PersistentDescriptorSet::start(layout.clone())
-                    .add_sampled_image(texture.clone(), sampler.clone())
+                    .add_sampled_image(font_atlas.clone(), sampler.clone())
                     .unwrap()
                     .build()
                     .unwrap(),
             );
-            (set, tex_future)
+            (set, text_future)
         };
 
-        let previous_frame_end = Some(Box::new(tex_future) as Box<dyn GpuFuture>);
+        let previous_frame_end = Some(Box::new(text_future) as Box<dyn GpuFuture>);
 
         //move all the stuff we need to keep for rendering in the renderer struct.
         Renderer {
@@ -394,7 +394,7 @@ impl Renderer {
             }
             Arc::new(self.window_vertex_buffer.next(vertex_array).unwrap())
         };
-        let clear_values = vec![[0.0, 0.0, 0.5, 1.0].into()];
+        let clear_values = vec![[0.1, 0.1, 0.1, 1.0].into()];
 
         //text compute pass stuff
         let text_indirect_args = self
