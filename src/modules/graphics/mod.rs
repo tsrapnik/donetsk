@@ -3,7 +3,7 @@ use nalgebra::Vector2;
 use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
-    buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer, CpuAccessibleBuffer, DeviceLocalBuffer},
+    buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
     command_buffer::{AutoCommandBufferBuilder, DrawIndirectCommand, DynamicState},
     descriptor::{
         descriptor_set::{DescriptorSet, PersistentDescriptorSet},
@@ -28,6 +28,9 @@ use vulkano::{
 use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
+
+const MAX_WINDOW_COUNT: usize = 100; //how many windows can be rendered at once
+const MAX_GLYPH_COUNT: usize = MAX_WINDOW_COUNT * 100; //how many letters we can render
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct WindowVertex {
@@ -85,8 +88,6 @@ pub fn pixel_to_screen_coordinates(
     position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
 }
 
-const MAX_VERTEX_COUNT: usize = 1000;
-
 pub struct Renderer {
     device: Arc<Device>,
     queue: Arc<vulkano::device::Queue>,
@@ -97,12 +98,12 @@ pub struct Renderer {
     window_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     window_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     window_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    window_vertex_buffer: CpuBufferPool<[WindowVertex; MAX_VERTEX_COUNT]>,
+    window_vertex_buffer: CpuBufferPool<WindowVertex>,
 
     text_compute_pipeline: Arc<ComputePipeline<PipelineLayout<text_compute_shader::Layout>>>,
     text_glyph_buffer: Arc<ImmutableBuffer<[font::GlyphLayout; font::GLYPH_LAYOUTS.len()]>>,
     text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
-    text_vertex_pool: CpuBufferPool<TextVertex>,
+    text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>>,
 
     text_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     text_render_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
@@ -218,6 +219,13 @@ impl Renderer {
             CpuBufferPool::new(device.clone(), BufferUsage::all());
         let text_vertex_pool: CpuBufferPool<TextVertex> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
+        let text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>> = DeviceLocalBuffer::array(
+            device.clone(),
+            MAX_GLYPH_COUNT * 6,
+            BufferUsage::all(),
+            vec![queue.family()],
+        )
+        .unwrap();
         let text_compute_shader = text_compute_shader::Shader::load(device.clone()).unwrap();
         let text_compute_pipeline = Arc::new(
             ComputePipeline::new(device.clone(), &text_compute_shader.main_entry_point(), &())
@@ -330,7 +338,7 @@ impl Renderer {
             text_compute_pipeline: text_compute_pipeline,
             text_glyph_buffer: text_glyph_buffer,
             text_indirect_args_pool: text_indirect_args_pool,
-            text_vertex_pool: text_vertex_pool,
+            text_vertex_buffer: text_vertex_buffer,
 
             text_render_pass: text_render_pass,
             text_render_pipeline: text_render_pipeline,
@@ -342,7 +350,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, vertices: &mut Vec<WindowVertex>, window_resized: bool) {
+    pub fn render(&mut self, vertices: Vec<WindowVertex>, window_resized: bool) {
         self.recreate_swapchain |= window_resized;
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
@@ -386,14 +394,7 @@ impl Renderer {
             self.recreate_swapchain = true;
         }
 
-        let vertex_buffer = {
-            let mut vertex_array: [WindowVertex; MAX_VERTEX_COUNT] =
-                [Default::default(); MAX_VERTEX_COUNT]; //todo: is there a better way to copy vertices to vertex_buffer?
-            for (index, vertex) in vertices.iter().enumerate() {
-                vertex_array[index] = *vertex;
-            }
-            Arc::new(self.window_vertex_buffer.next(vertex_array).unwrap())
-        };
+        let vertex_buffer = Arc::new(self.window_vertex_buffer.chunk(vertices.iter().cloned()).unwrap());
         let clear_values = vec![[0.1, 0.1, 0.1, 1.0].into()];
 
         //text compute pass stuff
@@ -406,10 +407,6 @@ impl Renderer {
                 first_instance: 0,
             }))
             .unwrap();
-        let text_vertices = self
-            .text_vertex_pool
-            .chunk((0..(6 * 16)).map(|_| TextVertex::default()))
-            .unwrap();
         let layout = self
             .text_compute_pipeline
             .layout()
@@ -419,7 +416,7 @@ impl Renderer {
             PersistentDescriptorSet::start(layout.clone())
                 .add_buffer(self.text_glyph_buffer.clone())
                 .unwrap()
-                .add_buffer(text_vertices.clone())
+                .add_buffer(self.text_vertex_buffer.clone())
                 .unwrap()
                 .add_buffer(text_indirect_args.clone())
                 .unwrap()
@@ -469,7 +466,7 @@ impl Renderer {
             .draw_indirect(
                 self.text_render_pipeline.clone(),
                 &self.dynamic_state,
-                vec![Arc::new(text_vertices.clone())],
+                vec![self.text_vertex_buffer.clone()],
                 text_indirect_args.clone(),
                 self.text_set.clone(),
                 (),

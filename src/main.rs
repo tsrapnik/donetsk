@@ -66,7 +66,7 @@ fn main() {
                 &mut vertices,
                 Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
             );
-            renderer.render(&mut vertices, window_resized);
+            renderer.render(vertices, window_resized);
             window_resized = false;
 
             println!("{:?}", now.elapsed());
