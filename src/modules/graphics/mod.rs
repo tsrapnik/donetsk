@@ -457,43 +457,43 @@ impl Renderer {
                     },
                     TextCharacter {
                         character: 'w' as u32,
-                        scale: 0.2,
-                        position: [0.075, 0.02],
-                        color: [0.0, 1.0, 0.0],
+                        scale: 1.0,
+                        position: [0.075, 0.1],
+                        color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'o' as u32,
                         scale: 1.0,
-                        position: [0.150, 0.02],
+                        position: [0.150, 0.1],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'r' as u32,
                         scale: 1.0,
-                        position: [0.225, 0.02],
+                        position: [0.225, 0.1],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'l' as u32,
                         scale: 1.0,
-                        position: [0.300, 0.02],
+                        position: [0.300, 0.1],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'd' as u32,
                         scale: 1.0,
-                        position: [0.375, 0.02],
+                        position: [0.375, 0.1],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: '.' as u32,
                         scale: 1.0,
-                        position: [0.450, 0.02],
+                        position: [0.450, 0.1],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
@@ -516,19 +516,13 @@ impl Renderer {
             .layout()
             .descriptor_set_layout(0)
             .unwrap();
-        let temp_vertex_buffer = CpuAccessibleBuffer::from_iter( //todo: remove. used only for debugging.
-            self.device.clone(),
-            BufferUsage::all(),
-            false,
-            [TextVertex::default(); MAX_GLYPH_COUNT * 6].iter().cloned(),
-        ).unwrap();
         let text_compute_descriptor_set = Arc::new(
             PersistentDescriptorSet::start(layout.clone())
                 .add_buffer(text_character_buffer.clone())
                 .unwrap()
                 .add_buffer(self.text_glyph_buffer.clone())
                 .unwrap()
-                .add_buffer(temp_vertex_buffer.clone())
+                .add_buffer(self.text_vertex_buffer.clone())
                 .unwrap()
                 .add_buffer(text_indirect_args.clone())
                 .unwrap()
@@ -578,7 +572,7 @@ impl Renderer {
             .draw_indirect(
                 self.text_render_pipeline.clone(),
                 &self.dynamic_state,
-                vec![temp_vertex_buffer.clone()],
+                vec![self.text_vertex_buffer.clone()],
                 text_indirect_args.clone(),
                 self.text_set.clone(),
                 (),
@@ -597,16 +591,6 @@ impl Renderer {
             .unwrap()
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
             .then_signal_fence_and_flush();
-            
-        future.unwrap().wait(None).unwrap();
-            let content = temp_vertex_buffer.read().unwrap();
-            for n in 0..200 {
-                println!("{}", n);
-                println!("{:?}", content[n].render_position);
-                println!("{:?}", content[n].glyph_position);
-                println!("{:?}", content[n].color);
-            }
-        loop{}
 
         match future {
             Ok(future) => {
