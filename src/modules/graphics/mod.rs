@@ -38,6 +38,7 @@ pub struct TextCharacter {
     pub scale: f32,
     pub position: [f32; 2],
     pub color: [f32; 3],
+    padding: f32, //padding to comply with std140 rules
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -423,66 +424,77 @@ impl Renderer {
                         scale: 0.1,
                         position: [0.0075, 0.0],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'e' as u32,
                         scale: 0.1,
                         position: [0.0150, 0.0],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'l' as u32,
                         scale: 0.1,
                         position: [0.0225, 0.0],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'l' as u32,
                         scale: 0.1,
                         position: [0.0300, 0.0],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'o' as u32,
                         scale: 0.1,
                         position: [0.0375, 0.0],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'w' as u32,
                         scale: 0.2,
                         position: [0.0075, 0.02],
                         color: [0.0, 1.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'o' as u32,
                         scale: 0.1,
                         position: [0.0150, 0.02],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'r' as u32,
                         scale: 0.1,
                         position: [0.0225, 0.02],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'l' as u32,
                         scale: 0.1,
                         position: [0.0300, 0.02],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: 'd' as u32,
                         scale: 0.1,
                         position: [0.0375, 0.02],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                     TextCharacter {
                         character: '.' as u32,
                         scale: 0.1,
                         position: [0.0450, 0.02],
                         color: [0.0, 0.0, 0.0],
+                        padding: 0.0,
                     },
                 ]
                 .iter()

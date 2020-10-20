@@ -5,7 +5,7 @@ pub struct GlyphLayout {
     size: [f32; 2], //size of the glyph
     offset: [f32; 2], //offset from the cursor where the glyp should be rendered
     advance: f32, //offset the cursor should move horizontally for next glyph
-    padding: f32, //can we remove the padding? check std140 rules.
+    padding: f32, //padding to comply with std140 rules
 }
 
 pub const LINE_HEIGHT: u32 = 96;
