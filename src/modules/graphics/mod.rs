@@ -53,6 +53,7 @@ struct TextVertex {
     pub render_position: [f32; 2],
     pub glyph_position: [f32; 2],
     pub color: [f32; 3],
+    padding: f32, //padding to comply with std140 rules
 }
 vulkano::impl_vertex!(TextVertex, render_position, glyph_position, color);
 
@@ -577,7 +578,7 @@ impl Renderer {
             .draw_indirect(
                 self.text_render_pipeline.clone(),
                 &self.dynamic_state,
-                vec![self.text_vertex_buffer.clone()],
+                vec![temp_vertex_buffer.clone()],
                 text_indirect_args.clone(),
                 self.text_set.clone(),
                 (),
@@ -599,11 +600,11 @@ impl Renderer {
             
         future.unwrap().wait(None).unwrap();
             let content = temp_vertex_buffer.read().unwrap();
-            for n in content.iter() {
-                println!("start:");
-                println!("{:?}", n.render_position);
-                println!("{:?}", n.glyph_position);
-                println!("{:?}", n.color);
+            for n in 0..200 {
+                println!("{}", n);
+                println!("{:?}", content[n].render_position);
+                println!("{:?}", content[n].glyph_position);
+                println!("{:?}", content[n].color);
             }
         loop{}
 
