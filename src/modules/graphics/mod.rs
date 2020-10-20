@@ -29,8 +29,8 @@ use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
-const MAX_WINDOW_COUNT: usize = 100; //how many windows can be rendered at once
-const MAX_GLYPH_COUNT: usize = MAX_WINDOW_COUNT * 100; //how many letters we can render
+const MAX_WINDOW_COUNT: usize = 10; //how many windows can be rendered at once
+const MAX_GLYPH_COUNT: usize = MAX_WINDOW_COUNT * 10; //how many letters we can render
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct TextCharacter {
@@ -421,78 +421,78 @@ impl Renderer {
                 [
                     TextCharacter {
                         character: 'h' as u32,
-                        scale: 0.1,
-                        position: [0.0075, 0.0],
+                        scale: 1.0,
+                        position: [0.075, 0.0],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'e' as u32,
-                        scale: 0.1,
-                        position: [0.0150, 0.0],
+                        scale: 1.0,
+                        position: [0.150, 0.0],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'l' as u32,
-                        scale: 0.1,
-                        position: [0.0225, 0.0],
+                        scale: 1.0,
+                        position: [0.225, 0.0],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'l' as u32,
-                        scale: 0.1,
-                        position: [0.0300, 0.0],
+                        scale: 1.0,
+                        position: [0.300, 0.0],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'o' as u32,
-                        scale: 0.1,
-                        position: [0.0375, 0.0],
+                        scale: 1.0,
+                        position: [0.375, 0.0],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'w' as u32,
                         scale: 0.2,
-                        position: [0.0075, 0.02],
+                        position: [0.075, 0.02],
                         color: [0.0, 1.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'o' as u32,
-                        scale: 0.1,
-                        position: [0.0150, 0.02],
+                        scale: 1.0,
+                        position: [0.150, 0.02],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'r' as u32,
-                        scale: 0.1,
-                        position: [0.0225, 0.02],
+                        scale: 1.0,
+                        position: [0.225, 0.02],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'l' as u32,
-                        scale: 0.1,
-                        position: [0.0300, 0.02],
+                        scale: 1.0,
+                        position: [0.300, 0.02],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: 'd' as u32,
-                        scale: 0.1,
-                        position: [0.0375, 0.02],
+                        scale: 1.0,
+                        position: [0.375, 0.02],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
                     TextCharacter {
                         character: '.' as u32,
-                        scale: 0.1,
-                        position: [0.0450, 0.02],
+                        scale: 1.0,
+                        position: [0.450, 0.02],
                         color: [0.0, 0.0, 0.0],
                         padding: 0.0,
                     },
@@ -515,13 +515,19 @@ impl Renderer {
             .layout()
             .descriptor_set_layout(0)
             .unwrap();
+        let temp_vertex_buffer = CpuAccessibleBuffer::from_iter( //todo: remove. used only for debugging.
+            self.device.clone(),
+            BufferUsage::all(),
+            false,
+            [TextVertex::default(); MAX_GLYPH_COUNT * 6].iter().cloned(),
+        ).unwrap();
         let text_compute_descriptor_set = Arc::new(
             PersistentDescriptorSet::start(layout.clone())
                 .add_buffer(text_character_buffer.clone())
                 .unwrap()
                 .add_buffer(self.text_glyph_buffer.clone())
                 .unwrap()
-                .add_buffer(self.text_vertex_buffer.clone())
+                .add_buffer(temp_vertex_buffer.clone())
                 .unwrap()
                 .add_buffer(text_indirect_args.clone())
                 .unwrap()
@@ -590,6 +596,16 @@ impl Renderer {
             .unwrap()
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
             .then_signal_fence_and_flush();
+            
+        future.unwrap().wait(None).unwrap();
+            let content = temp_vertex_buffer.read().unwrap();
+            for n in content.iter() {
+                println!("start:");
+                println!("{:?}", n.render_position);
+                println!("{:?}", n.glyph_position);
+                println!("{:?}", n.color);
+            }
+        loop{}
 
         match future {
             Ok(future) => {
