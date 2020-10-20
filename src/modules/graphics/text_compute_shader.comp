@@ -1,9 +1,16 @@
 #version 450
 
 const uint glyph_layouts_size = 128;
-const float advance = 0.075;
+const uint max_glyph_count = 100 * 100; //todo: don't have two definitions of max_glyph_count.
 
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+
+struct TextCharacter {
+    uint character;
+    float scale;
+    vec2 position;
+    vec3 color;
+};
 
 struct GlyphLayout {
     vec2 origin;
@@ -13,19 +20,24 @@ struct GlyphLayout {
 };
 
 struct TextVertex {
-    vec2 position;
-    vec2 texture_coordinates;
+    vec2 render_position;
+    vec2 glyph_position;
+    vec3 color;
 };
 
-layout(set = 0, binding = 0) uniform GlyphBuffer {
+layout(set = 0, binding = 0) uniform CharacterBuffer {
+    TextCharacter text_character_buffer[max_glyph_count];
+};
+
+layout(set = 0, binding = 1) uniform GlyphBuffer {
     GlyphLayout glyph_layouts[glyph_layouts_size];
 };
 
-layout(set = 0, binding = 1) buffer Output {
-    TextVertex text_vertex_buffer[];
+layout(set = 0, binding = 2) buffer Output {
+    TextVertex text_vertex_buffer[max_glyph_count * 6];
 };
 
-layout(set = 0, binding = 2) buffer IndirectDrawArgs {
+layout(set = 0, binding = 3) buffer IndirectDrawArgs {
     uint vertices;
     uint unused0;
     uint unused1;
@@ -33,25 +45,38 @@ layout(set = 0, binding = 2) buffer IndirectDrawArgs {
 };
 
 void main() {
-    // if index is not in glyp_layouts table, just map it to its last element to avoid reading out of bounds (last element is delete and won't get rendered).
-    uint glyph_index = min(gl_GlobalInvocationID.x + 97, glyph_layouts_size - 1);
-
     uint offset = atomicAdd(vertices, 6);
 
-    vec3 size = vec3(glyph_layouts[glyph_index].size, 0.0);
-    vec2 texture_origin = glyph_layouts[glyph_index].origin;
-    text_vertex_buffer[offset + 0].texture_coordinates = texture_origin + size.zz;
-    text_vertex_buffer[offset + 1].texture_coordinates = texture_origin + size.xz;
-    text_vertex_buffer[offset + 2].texture_coordinates = texture_origin + size.zy;
-    text_vertex_buffer[offset + 3].texture_coordinates = texture_origin + size.xz;
-    text_vertex_buffer[offset + 4].texture_coordinates = texture_origin + size.zy;
-    text_vertex_buffer[offset + 5].texture_coordinates = texture_origin + size.xy;
+    //if index is not in glyp_layouts table, just map it to its last element to avoid reading out of bounds (last element is delete and won't get rendered).
+    uint glyph_index = min(text_character_buffer[gl_GlobalInvocationID.x].character, glyph_layouts_size - 1);
 
-    vec2 render_origin = 3.0 * (glyph_layouts[glyph_index].offset + vec2(float(gl_GlobalInvocationID.x) * advance, 0.0)) + vec2(-1.0, 0.0);
-    text_vertex_buffer[offset + 0].position = render_origin + 3.0 * size.zz;
-    text_vertex_buffer[offset + 1].position = render_origin + 3.0 * size.xz;
-    text_vertex_buffer[offset + 2].position = render_origin + 3.0 * size.zy;
-    text_vertex_buffer[offset + 3].position = render_origin + 3.0 * size.xz;
-    text_vertex_buffer[offset + 4].position = render_origin + 3.0 * size.zy;
-    text_vertex_buffer[offset + 5].position = render_origin + 3.0 * size.xy;
+    float scale = text_character_buffer[gl_GlobalInvocationID.x].scale;
+    vec2 position = text_character_buffer[gl_GlobalInvocationID.x].position;
+    vec3 color = text_character_buffer[gl_GlobalInvocationID.x].color;
+
+    //store size in vec3 with z being 0.0, so we can use swizzling to add or not add size components to the origin vec2.
+    vec3 glyph_size = vec3(glyph_layouts[glyph_index].size, 0.0);
+    vec2 glyph_origin = glyph_layouts[glyph_index].origin;
+    text_vertex_buffer[offset + 0].glyph_position = glyph_origin + glyph_size.zz;
+    text_vertex_buffer[offset + 1].glyph_position = glyph_origin + glyph_size.xz;
+    text_vertex_buffer[offset + 2].glyph_position = glyph_origin + glyph_size.zy;
+    text_vertex_buffer[offset + 3].glyph_position = glyph_origin + glyph_size.xz;
+    text_vertex_buffer[offset + 4].glyph_position = glyph_origin + glyph_size.zy;
+    text_vertex_buffer[offset + 5].glyph_position = glyph_origin + glyph_size.xy;
+
+    vec3 render_size = glyph_size * scale;
+    vec2 render_origin = position;
+    text_vertex_buffer[offset + 0].render_position = render_origin + render_size.zz;
+    text_vertex_buffer[offset + 1].render_position = render_origin + render_size.xz;
+    text_vertex_buffer[offset + 2].render_position = render_origin + render_size.zy;
+    text_vertex_buffer[offset + 3].render_position = render_origin + render_size.xz;
+    text_vertex_buffer[offset + 4].render_position = render_origin + render_size.zy;
+    text_vertex_buffer[offset + 5].render_position = render_origin + render_size.xy;
+
+    text_vertex_buffer[offset + 0].color = color;
+    text_vertex_buffer[offset + 1].color = color;
+    text_vertex_buffer[offset + 2].color = color;
+    text_vertex_buffer[offset + 3].color = color;
+    text_vertex_buffer[offset + 4].color = color;
+    text_vertex_buffer[offset + 5].color = color;
 }

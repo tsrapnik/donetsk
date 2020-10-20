@@ -33,6 +33,14 @@ const MAX_WINDOW_COUNT: usize = 100; //how many windows can be rendered at once
 const MAX_GLYPH_COUNT: usize = MAX_WINDOW_COUNT * 100; //how many letters we can render
 
 #[derive(Default, Debug, Clone, Copy)]
+pub struct TextCharacter {
+    pub character: u32,
+    pub scale: f32,
+    pub position: [f32; 2],
+    pub color: [f32; 3],
+}
+
+#[derive(Default, Debug, Clone, Copy)]
 pub struct WindowVertex {
     pub position: [f32; 2],
     pub color: [f32; 3],
@@ -41,10 +49,11 @@ vulkano::impl_vertex!(WindowVertex, position, color);
 
 #[derive(Default, Debug, Clone, Copy)]
 struct TextVertex {
-    position: [f32; 2],
-    texture_coordinates: [f32; 2],
+    pub render_position: [f32; 2],
+    pub glyph_position: [f32; 2],
+    pub color: [f32; 3],
 }
-vulkano::impl_vertex!(TextVertex, position, texture_coordinates);
+vulkano::impl_vertex!(TextVertex, render_position, glyph_position, color);
 
 pub mod window_vertex_shader {
     vulkano_shaders::shader! {
@@ -101,6 +110,7 @@ pub struct Renderer {
     window_vertex_buffer: CpuBufferPool<WindowVertex>,
 
     text_compute_pipeline: Arc<ComputePipeline<PipelineLayout<text_compute_shader::Layout>>>,
+    text_character_pool: CpuBufferPool<TextCharacter>,
     text_glyph_buffer: Arc<ImmutableBuffer<[font::GlyphLayout; font::GLYPH_LAYOUTS.len()]>>,
     text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
     text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>>,
@@ -213,15 +223,15 @@ impl Renderer {
         );
 
         //objects used by text compute pass
+        let text_character_pool: CpuBufferPool<TextCharacter> =
+            CpuBufferPool::new(device.clone(), BufferUsage::all());
         let (text_glyph_buffer, _) = //todo: use future.
             ImmutableBuffer::from_data(font::GLYPH_LAYOUTS, BufferUsage::all(), queue.clone()).unwrap();
         let text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
-        let text_vertex_pool: CpuBufferPool<TextVertex> =
-            CpuBufferPool::new(device.clone(), BufferUsage::all());
         let text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>> = DeviceLocalBuffer::array(
             device.clone(),
-            MAX_GLYPH_COUNT * 6,
+            MAX_GLYPH_COUNT * 6, //todo: change buffer size at runtime, when more than MAX_GLYPH_COUNT.
             BufferUsage::all(),
             vec![queue.family()],
         )
@@ -272,7 +282,7 @@ impl Renderer {
         );
 
         let (text_set, text_future) = {
-            let (font_atlas, text_future) = {
+            let (glyph_atlas, text_future) = {
                 let png_bytes = include_bytes!("../../font/deja_vu_sans_mono.png").to_vec();
                 let cursor = Cursor::new(png_bytes);
                 let decoder = png::Decoder::new(cursor);
@@ -312,7 +322,7 @@ impl Renderer {
                 .unwrap();
             let set = Arc::new(
                 PersistentDescriptorSet::start(layout.clone())
-                    .add_sampled_image(font_atlas.clone(), sampler.clone())
+                    .add_sampled_image(glyph_atlas.clone(), sampler.clone())
                     .unwrap()
                     .build()
                     .unwrap(),
@@ -336,6 +346,7 @@ impl Renderer {
             window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
 
             text_compute_pipeline: text_compute_pipeline,
+            text_character_pool: text_character_pool,
             text_glyph_buffer: text_glyph_buffer,
             text_indirect_args_pool: text_indirect_args_pool,
             text_vertex_buffer: text_vertex_buffer,
@@ -394,10 +405,90 @@ impl Renderer {
             self.recreate_swapchain = true;
         }
 
-        let vertex_buffer = Arc::new(self.window_vertex_buffer.chunk(vertices.iter().cloned()).unwrap());
+        let vertex_buffer = Arc::new(
+            self.window_vertex_buffer
+                .chunk(vertices.iter().cloned())
+                .unwrap(),
+        );
         let clear_values = vec![[0.1, 0.1, 0.1, 1.0].into()];
 
         //text compute pass stuff
+        //todo: pass real characters and text lines in stead of example.
+        let text_character_buffer = self
+            .text_character_pool
+            .chunk(
+                [
+                    TextCharacter {
+                        character: 'h' as u32,
+                        scale: 0.1,
+                        position: [0.0075, 0.0],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'e' as u32,
+                        scale: 0.1,
+                        position: [0.0150, 0.0],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'l' as u32,
+                        scale: 0.1,
+                        position: [0.0225, 0.0],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'l' as u32,
+                        scale: 0.1,
+                        position: [0.0300, 0.0],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'o' as u32,
+                        scale: 0.1,
+                        position: [0.0375, 0.0],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'w' as u32,
+                        scale: 0.2,
+                        position: [0.0075, 0.02],
+                        color: [0.0, 1.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'o' as u32,
+                        scale: 0.1,
+                        position: [0.0150, 0.02],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'r' as u32,
+                        scale: 0.1,
+                        position: [0.0225, 0.02],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'l' as u32,
+                        scale: 0.1,
+                        position: [0.0300, 0.02],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: 'd' as u32,
+                        scale: 0.1,
+                        position: [0.0375, 0.02],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                    TextCharacter {
+                        character: '.' as u32,
+                        scale: 0.1,
+                        position: [0.0450, 0.02],
+                        color: [0.0, 0.0, 0.0],
+                    },
+                ]
+                .iter()
+                .cloned(),
+            )
+            .unwrap();
         let text_indirect_args = self
             .text_indirect_args_pool
             .chunk(iter::once(DrawIndirectCommand {
@@ -414,6 +505,8 @@ impl Renderer {
             .unwrap();
         let text_compute_descriptor_set = Arc::new(
             PersistentDescriptorSet::start(layout.clone())
+                .add_buffer(text_character_buffer.clone())
+                .unwrap()
                 .add_buffer(self.text_glyph_buffer.clone())
                 .unwrap()
                 .add_buffer(self.text_vertex_buffer.clone())
