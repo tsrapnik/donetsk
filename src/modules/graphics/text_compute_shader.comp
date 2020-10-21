@@ -45,7 +45,7 @@ layout(set = 0, binding = 3) buffer IndirectDrawArgs {
 };
 
 void main() {
-    uint offset = atomicAdd(vertices, 6);
+    uint vertex_index = atomicAdd(vertices, 6);
 
     //if index is not in glyp_layouts table, just map it to its last element to avoid reading out of bounds (last element is delete and won't get rendered).
     uint glyph_index = min(text_character_buffer[gl_GlobalInvocationID.x].character, glyph_layouts_size - 1);
@@ -57,26 +57,26 @@ void main() {
     //store size in vec3 with z being 0.0, so we can use swizzling to add or not add size components to the origin vec2.
     vec3 glyph_size = vec3(glyph_layouts[glyph_index].size, 0.0);
     vec2 glyph_origin = glyph_layouts[glyph_index].origin;
-    text_vertex_buffer[offset + 0].glyph_position = glyph_origin + glyph_size.zz;
-    text_vertex_buffer[offset + 1].glyph_position = glyph_origin + glyph_size.xz;
-    text_vertex_buffer[offset + 2].glyph_position = glyph_origin + glyph_size.zy;
-    text_vertex_buffer[offset + 3].glyph_position = glyph_origin + glyph_size.xz;
-    text_vertex_buffer[offset + 4].glyph_position = glyph_origin + glyph_size.zy;
-    text_vertex_buffer[offset + 5].glyph_position = glyph_origin + glyph_size.xy;
+    text_vertex_buffer[vertex_index + 0].glyph_position = glyph_origin + glyph_size.zz;
+    text_vertex_buffer[vertex_index + 1].glyph_position = glyph_origin + glyph_size.xz;
+    text_vertex_buffer[vertex_index + 2].glyph_position = glyph_origin + glyph_size.zy;
+    text_vertex_buffer[vertex_index + 3].glyph_position = glyph_origin + glyph_size.xz;
+    text_vertex_buffer[vertex_index + 4].glyph_position = glyph_origin + glyph_size.zy;
+    text_vertex_buffer[vertex_index + 5].glyph_position = glyph_origin + glyph_size.xy;
 
     vec3 render_size = glyph_size * scale;
-    vec2 render_origin = position;
-    text_vertex_buffer[offset + 0].render_position = render_origin + render_size.zz;
-    text_vertex_buffer[offset + 1].render_position = render_origin + render_size.xz;
-    text_vertex_buffer[offset + 2].render_position = render_origin + render_size.zy;
-    text_vertex_buffer[offset + 3].render_position = render_origin + render_size.xz;
-    text_vertex_buffer[offset + 4].render_position = render_origin + render_size.zy;
-    text_vertex_buffer[offset + 5].render_position = render_origin + render_size.xy;
+    vec2 render_origin = position + glyph_layouts[glyph_index].offset;
+    text_vertex_buffer[vertex_index + 0].render_position = render_origin + render_size.zz;
+    text_vertex_buffer[vertex_index + 1].render_position = render_origin + render_size.xz;
+    text_vertex_buffer[vertex_index + 2].render_position = render_origin + render_size.zy;
+    text_vertex_buffer[vertex_index + 3].render_position = render_origin + render_size.xz;
+    text_vertex_buffer[vertex_index + 4].render_position = render_origin + render_size.zy;
+    text_vertex_buffer[vertex_index + 5].render_position = render_origin + render_size.xy;
 
-    text_vertex_buffer[offset + 0].color = color;
-    text_vertex_buffer[offset + 1].color = color;
-    text_vertex_buffer[offset + 2].color = color;
-    text_vertex_buffer[offset + 3].color = color;
-    text_vertex_buffer[offset + 4].color = color;
-    text_vertex_buffer[offset + 5].color = color;
+    text_vertex_buffer[vertex_index + 0].color = color;
+    text_vertex_buffer[vertex_index + 1].color = color;
+    text_vertex_buffer[vertex_index + 2].color = color;
+    text_vertex_buffer[vertex_index + 3].color = color;
+    text_vertex_buffer[vertex_index + 4].color = color;
+    text_vertex_buffer[vertex_index + 5].color = color;
 }

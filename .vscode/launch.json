@@ -9,7 +9,8 @@
             "request": "launch",
             "name": "debug on linux",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Rust: cargo build - donetsk",
         },
         {
             "type": "lldb",
@@ -24,7 +25,8 @@
             "name": "debug on windows",
             "program": "${workspaceRoot}/target/debug/donetsk.exe",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Rust: cargo build - donetsk",
         },
         {
             "type": "cppvsdbg",
