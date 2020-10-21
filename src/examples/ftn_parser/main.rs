@@ -2,11 +2,12 @@ use std::{env, fmt::Write, fs, path::Path};
 
 fn main() {
     const ASCII_TABLE_LENGHT: usize = 128;
+    const TEXTURE_SIDE: f32 = 512.0;
     let mut fnt_path = env::current_dir().unwrap();
     fnt_path.push(Path::new("src/font/deja_vu_sans_mono.fnt"));
     let fnt_file = fs::read_to_string(fnt_path).unwrap();
 
-    let mut line_height = 0u32;
+    let mut line_height = 0.0f32;
 
     #[derive(Default, Copy, Clone, Debug)]
     struct GlyphLayout {
@@ -27,7 +28,7 @@ fn main() {
             Some("common") => {
                 for key_value_pair in word_groups {
                     match to_key_and_value(key_value_pair) {
-                        ("lineHeight", value) => line_height = value as u32,
+                        ("lineHeight", value) => line_height = (value as f32) / TEXTURE_SIDE,
                         _ => {}
                     }
                 }
@@ -38,13 +39,13 @@ fn main() {
                 let mut index = usize::default();
                 for key_value_pair in word_groups {
                     match to_key_and_value(key_value_pair) {
-                        ("x", value) => glyph_layout.origin[0] = (value as f32) / 512.0,
-                        ("y", value) => glyph_layout.origin[1] = (value as f32) / 512.0,
-                        ("width", value) => glyph_layout.size[0] = (value as f32) / 512.0,
-                        ("height", value) => glyph_layout.size[1] = (value as f32) / 512.0,
-                        ("xoffset", value) => glyph_layout.offset[0] = (value as f32) / 512.0,
-                        ("yoffset", value) => glyph_layout.offset[1] = (value as f32) / 512.0,
-                        ("xadvance", value) => glyph_layout.advance = (value as f32) / 512.0,
+                        ("x", value) => glyph_layout.origin[0] = (value as f32) / TEXTURE_SIDE,
+                        ("y", value) => glyph_layout.origin[1] = (value as f32) / TEXTURE_SIDE,
+                        ("width", value) => glyph_layout.size[0] = (value as f32) / TEXTURE_SIDE,
+                        ("height", value) => glyph_layout.size[1] = (value as f32) / TEXTURE_SIDE,
+                        ("xoffset", value) => glyph_layout.offset[0] = (value as f32) / TEXTURE_SIDE,
+                        ("yoffset", value) => glyph_layout.offset[1] = (value as f32) / TEXTURE_SIDE,
+                        ("xadvance", value) => glyph_layout.advance = (value as f32) / TEXTURE_SIDE,
                         ("id", value) => index = value as usize,
                         _ => {}
                     }
@@ -60,16 +61,16 @@ fn main() {
         "
 #[derive(Default, Copy, Clone, Debug)]
 pub struct GlyphLayout {
-    origin: [f32; 2], //where in texture the glyph is located
-    size: [f32; 2], //size of the glyph
-    offset: [f32; 2], //offset from the cursor where the glyp should be rendered
-    advance: f32, //offset the cursor should move horizontally for next glyph
-    padding: f32, //padding to comply with std140 rules
+    pub origin: [f32; 2], //where in texture the glyph is located
+    pub size: [f32; 2], //size of the glyph
+    pub offset: [f32; 2], //offset from the cursor where the glyp should be rendered
+    pub advance: f32, //offset the cursor should move horizontally for next glyph
+    pub padding: f32, //padding to comply with std140 rules
 }\n\n",
     );
     write!(
         &mut output_string,
-        "pub const LINE_HEIGHT: u32 = {};\n",
+        "pub const LINE_HEIGHT: f32 = {:.1};\n",
         line_height,
     )
     .unwrap();

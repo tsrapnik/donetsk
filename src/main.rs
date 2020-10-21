@@ -66,7 +66,17 @@ fn main() {
                 &mut vertices,
                 Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
             );
-            renderer.render(vertices, window_resized);
+
+            let mut character_buffer = Vec::with_capacity(11);
+            graphics::push_string(
+                "hello\nworld.",
+                0.3,
+                [0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                &mut character_buffer,
+            );
+
+            renderer.render(character_buffer, vertices, window_resized);
             window_resized = false;
 
             println!("{:?}", now.elapsed());

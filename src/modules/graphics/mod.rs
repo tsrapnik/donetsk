@@ -3,7 +3,7 @@ use nalgebra::Vector2;
 use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
-    buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
+    buffer::{BufferUsage, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
     command_buffer::{AutoCommandBufferBuilder, DrawIndirectCommand, DynamicState},
     descriptor::{
         descriptor_set::{DescriptorSet, PersistentDescriptorSet},
@@ -97,6 +97,36 @@ pub fn pixel_to_screen_coordinates(
     window_dimensions: Vector2<f32>,
 ) -> Vector2<f32> {
     position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
+}
+
+pub fn push_string(string: &str, height: f32, mut position: [f32; 2], color: [f32; 3], buffer: &mut Vec<TextCharacter>)
+{
+    //TODO: only supports ascii.
+    let original_x_position = position[0];
+    let scale = height / font::LINE_HEIGHT;
+    for character in string.chars() {
+        match character {
+            '\n' => {
+                //newline
+                position[0] = original_x_position;
+                position[1] += height;
+            }
+            ' '..='~' => {
+                //regular ascii character
+                buffer.push(TextCharacter{
+                    character: character as u32,
+                    scale: scale,
+                    position:position,
+                    color: color,
+                    padding: 0.0,
+                });
+                position[0] += font::GLYPH_LAYOUTS[character as usize].advance * scale;
+            }
+            _ => {
+                //not renderable characters
+            }
+        }
+    }
 }
 
 pub struct Renderer {
@@ -227,13 +257,13 @@ impl Renderer {
         //objects used by text compute pass
         let text_character_pool: CpuBufferPool<TextCharacter> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
-        let (text_glyph_buffer, _) = //todo: use future.
+        let (text_glyph_buffer, _) = //TODO: use future.
             ImmutableBuffer::from_data(font::GLYPH_LAYOUTS, BufferUsage::all(), queue.clone()).unwrap();
         let text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
         let text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>> = DeviceLocalBuffer::array(
             device.clone(),
-            MAX_GLYPH_COUNT * 6, //todo: change buffer size at runtime, when more than MAX_GLYPH_COUNT.
+            MAX_GLYPH_COUNT * 6, //TODO: change buffer size at runtime, when more than MAX_GLYPH_COUNT.
             BufferUsage::all(),
             vec![queue.family()],
         )
@@ -299,7 +329,7 @@ impl Renderer {
                 ImmutableImage::from_iter(
                     image_data.iter().cloned(),
                     dimensions,
-                    Format::R8G8B8A8Srgb, //todo: change to r8 file format.
+                    Format::R8G8B8A8Srgb, //TODO: change to r8 file format.
                     queue.clone(),
                 )
                 .unwrap()
@@ -363,7 +393,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, vertices: Vec<WindowVertex>, window_resized: bool) {
+    pub fn render(&mut self, text_character_buffer: Vec<TextCharacter>, vertices: Vec<WindowVertex>, window_resized: bool) {
         self.recreate_swapchain |= window_resized;
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
@@ -374,7 +404,7 @@ impl Renderer {
             let (new_swapchain, new_images) =
                 match self.swapchain.recreate_with_dimensions(dimensions) {
                     Ok(r) => r,
-                    Err(SwapchainCreationError::UnsupportedDimensions) => return, //todo: return replaces continue?
+                    Err(SwapchainCreationError::UnsupportedDimensions) => return, //TODO: return replaces continue?
                     Err(err) => panic!("{:?}", err),
                 };
 
@@ -398,7 +428,7 @@ impl Renderer {
                 Ok(r) => r,
                 Err(AcquireError::OutOfDate) => {
                     self.recreate_swapchain = true;
-                    return; //todo: return replaces continue?
+                    return; //TODO: return replaces continue?
                 }
                 Err(err) => panic!("{:?}", err),
             };
@@ -415,92 +445,10 @@ impl Renderer {
         let clear_values = vec![[0.1, 0.1, 0.1, 1.0].into()];
 
         //text compute pass stuff
-        //todo: pass real characters and text lines in stead of example.
+        //TODO: pass real characters and text lines in stead of example.
         let text_character_buffer = self
             .text_character_pool
-            .chunk(
-                [
-                    TextCharacter {
-                        character: 'h' as u32,
-                        scale: 1.0,
-                        position: [0.075, 0.0],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'e' as u32,
-                        scale: 1.0,
-                        position: [0.150, 0.0],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'l' as u32,
-                        scale: 1.0,
-                        position: [0.225, 0.0],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'l' as u32,
-                        scale: 1.0,
-                        position: [0.300, 0.0],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'o' as u32,
-                        scale: 1.0,
-                        position: [0.375, 0.0],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'w' as u32,
-                        scale: 1.0,
-                        position: [0.075, 0.12],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'o' as u32,
-                        scale: 1.0,
-                        position: [0.150, 0.12],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'r' as u32,
-                        scale: 1.0,
-                        position: [0.225, 0.12],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'l' as u32,
-                        scale: 1.0,
-                        position: [0.300, 0.12],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: 'd' as u32,
-                        scale: 1.0,
-                        position: [0.375, 0.12],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                    TextCharacter {
-                        character: '.' as u32,
-                        scale: 1.0,
-                        position: [0.450, 0.12],
-                        color: [0.0, 0.0, 0.0],
-                        padding: 0.0,
-                    },
-                ]
-                .iter()
-                .cloned(),
-            )
+            .chunk(text_character_buffer)
             .unwrap();
         let text_indirect_args = self
             .text_indirect_args_pool

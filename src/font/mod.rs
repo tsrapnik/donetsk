@@ -1,14 +1,14 @@
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct GlyphLayout {
-    origin: [f32; 2], //where in texture the glyph is located
-    size: [f32; 2], //size of the glyph
-    offset: [f32; 2], //offset from the cursor where the glyp should be rendered
-    advance: f32, //offset the cursor should move horizontally for next glyph
-    padding: f32, //padding to comply with std140 rules
+    pub origin: [f32; 2], //where in texture the glyph is located
+    pub size: [f32; 2], //size of the glyph
+    pub offset: [f32; 2], //offset from the cursor where the glyp should be rendered
+    pub advance: f32, //offset the cursor should move horizontally for next glyph
+    pub padding: f32, //padding to comply with std140 rules
 }
 
-pub const LINE_HEIGHT: u32 = 96;
+pub const LINE_HEIGHT: f32 = 0.2;
 pub const GLYPH_LAYOUTS: [GlyphLayout; 128] = [
     GlyphLayout { origin: [0.6015625, 0.0], size: [0.08984375, 0.14648438], offset: [0.0, 0.021484375], advance: 0.1015625, padding: 0.0 },
     GlyphLayout { origin: [0.0, 0.0], size: [0.0, 0.0], offset: [0.0, 0.0], advance: 0.0, padding: 0.0 },

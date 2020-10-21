@@ -1,7 +1,7 @@
 #version 450
 
 const uint glyph_layouts_size = 128;
-const uint max_glyph_count = 100 * 100; //todo: don't have two definitions of max_glyph_count.
+const uint max_glyph_count = 100 * 100; //TODO: don't have two definitions of max_glyph_count.
 
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
@@ -65,7 +65,7 @@ void main() {
     text_vertex_buffer[vertex_index + 5].glyph_position = glyph_origin + glyph_size.xy;
 
     vec3 render_size = glyph_size * scale;
-    vec2 render_origin = position + glyph_layouts[glyph_index].offset;
+    vec2 render_origin = position + glyph_layouts[glyph_index].offset * scale;
     text_vertex_buffer[vertex_index + 0].render_position = render_origin + render_size.zz;
     text_vertex_buffer[vertex_index + 1].render_position = render_origin + render_size.xz;
     text_vertex_buffer[vertex_index + 2].render_position = render_origin + render_size.zy;

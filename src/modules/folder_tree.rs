@@ -51,9 +51,9 @@ pub fn browse_folder(folder_tree: &mut DiGraph<Node, ()>, parent_node: NodeIndex
 }
 
 pub fn move_folders(folder_tree: &mut DiGraph<Node, ()>, root: NodeIndex) {
-    //todo: maybe remove creation of displacements and immediately change positions (should have nearly the same effect and requires less computation).
+    //TODO: maybe remove creation of displacements and immediately change positions (should have nearly the same effect and requires less computation).
     let mut displacements = vec![Vector2::new(0.0, 0.0); folder_tree.node_count()];
-    //todo: fix issue of chasing semicircles.
+    //TODO: fix issue of chasing semicircles.
     //for each pair of nodes repel the nodes if they come too close.
     for node_0 in folder_tree.node_indices() {
         let fixed_position = folder_tree[node_0].position;
