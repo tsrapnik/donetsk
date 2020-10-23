@@ -1,0 +1,54 @@
+#version 450
+
+const uint max_rectangle_count = 100; //TODO: don't have two definitions of max_rectangle_count.
+
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+
+struct Rectangle {
+    vec2 position;
+    vec2 size;
+    vec3 color;
+};
+
+struct PolygonVertex {
+    vec2 position;
+    vec3 color;
+};
+
+layout(set = 0, binding = 0) uniform RectangleBuffer {
+    Rectangle rectangle_buffer[max_rectangle_count];
+};
+
+layout(set = 0, binding = 1) buffer Output {
+    PolygonVertex polygon_vertex_buffer[max_rectangle_count * 6];
+};
+
+layout(set = 0, binding = 2) buffer IndirectDrawArgs {
+    uint vertices;
+    uint unused0;
+    uint unused1;
+    uint unused2;
+};
+
+void main() {
+    uint vertex_index = atomicAdd(vertices, 6);
+
+    vec2 origin = rectangle_buffer[gl_GlobalInvocationID.x].position;
+    //store size in vec3 with z being 0.0, so we can use swizzling to add or not add size components to the origin vec2.
+    vec3 size = vec3(rectangle_buffer[gl_GlobalInvocationID.x].size, 0.0);
+    vec3 color = rectangle_buffer[gl_GlobalInvocationID.x].color;
+
+    polygon_vertex_buffer[vertex_index + 0].position = origin + size.zz;
+    polygon_vertex_buffer[vertex_index + 1].position = origin + size.xz;
+    polygon_vertex_buffer[vertex_index + 2].position = origin + size.zy;
+    polygon_vertex_buffer[vertex_index + 3].position = origin + size.xz;
+    polygon_vertex_buffer[vertex_index + 4].position = origin + size.zy;
+    polygon_vertex_buffer[vertex_index + 5].position = origin + size.xy;
+
+    polygon_vertex_buffer[vertex_index + 0].color = color;
+    polygon_vertex_buffer[vertex_index + 1].color = color;
+    polygon_vertex_buffer[vertex_index + 2].color = color;
+    polygon_vertex_buffer[vertex_index + 3].color = color;
+    polygon_vertex_buffer[vertex_index + 4].color = color;
+    polygon_vertex_buffer[vertex_index + 5].color = color;
+}

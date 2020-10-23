@@ -29,14 +29,15 @@ use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
-const MAX_WINDOW_COUNT: usize = 10; //how many windows can be rendered at once
-const MAX_GLYPH_COUNT: usize = MAX_WINDOW_COUNT * 10; //how many letters we can render
+const MAX_RECTANGLE_COUNT: usize = 10; //how many windows can be rendered at once
+const MAX_GLYPH_COUNT: usize = MAX_RECTANGLE_COUNT * 10; //how many letters we can render
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Rectangle {
     pub position: [f32; 2],
     pub size: [f32; 2],
-    pub color: [f32; 2],
+    pub color: [f32; 3],
+    pub padding: f32, //padding to comply with std140 rules
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -52,6 +53,7 @@ pub struct TextCharacter {
 pub struct PolygonVertex {
     pub position: [f32; 2],
     pub color: [f32; 3],
+    padding: [f32; 3], //padding to comply with std140 rules
 }
 vulkano::impl_vertex!(PolygonVertex, position, color);
 
@@ -63,6 +65,13 @@ struct TextVertex {
     padding: f32, //padding to comply with std140 rules
 }
 vulkano::impl_vertex!(TextVertex, render_position, glyph_position, color);
+
+pub mod rectangle_compute_shader {
+    vulkano_shaders::shader! {
+        ty: "compute",
+        path: "src/modules/graphics/rectangle_compute_shader.comp"
+    }
+}
 
 pub mod polygon_vertex_shader {
     vulkano_shaders::shader! {
@@ -78,6 +87,13 @@ pub mod polygon_fragment_shader {
     }
 }
 
+pub mod text_compute_shader {
+    vulkano_shaders::shader! {
+        ty: "compute",
+        path: "src/modules/graphics/text_compute_shader.comp"
+    }
+}
+
 pub mod text_vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
@@ -89,13 +105,6 @@ pub mod text_fragment_shader {
     vulkano_shaders::shader! {
         ty: "fragment",
         path: "src/modules/graphics/text_fragment_shader.frag"
-    }
-}
-
-pub mod text_compute_shader {
-    vulkano_shaders::shader! {
-        ty: "compute",
-        path: "src/modules/graphics/text_compute_shader.comp"
     }
 }
 
@@ -148,10 +157,15 @@ pub struct Renderer {
 
     dynamic_state: DynamicState,
 
+    rectangle_compute_pipeline:
+        Arc<ComputePipeline<PipelineLayout<rectangle_compute_shader::Layout>>>,
+    rectangle_pool: CpuBufferPool<Rectangle>,
+    rectangle_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
+    polygon_vertex_buffer: Arc<DeviceLocalBuffer<[PolygonVertex]>>,
+
     polygon_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    polygon_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+    polygon_render_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     polygon_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    polygon_vertex_buffer: CpuBufferPool<PolygonVertex>,
 
     text_compute_pipeline: Arc<ComputePipeline<PipelineLayout<text_compute_shader::Layout>>>,
     text_character_pool: CpuBufferPool<TextCharacter>,
@@ -228,6 +242,30 @@ impl Renderer {
             reference: None,
         };
 
+        //objects uses by polygon compute pass
+        let rectangle_pool: CpuBufferPool<Rectangle> =
+            CpuBufferPool::new(device.clone(), BufferUsage::all());
+        let rectangle_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
+            CpuBufferPool::new(device.clone(), BufferUsage::all());
+        let polygon_vertex_buffer: Arc<DeviceLocalBuffer<[PolygonVertex]>> =
+            DeviceLocalBuffer::array(
+                device.clone(),
+                MAX_RECTANGLE_COUNT * 6, //TODO: change buffer size at runtime, when more than MAX_RECTANGLE_COUNT.
+                BufferUsage::all(),
+                vec![queue.family()],
+            )
+            .unwrap();
+        let rectangle_compute_shader =
+            rectangle_compute_shader::Shader::load(device.clone()).unwrap();
+        let rectangle_compute_pipeline = Arc::new(
+            ComputePipeline::new(
+                device.clone(),
+                &rectangle_compute_shader.main_entry_point(),
+                &(),
+            )
+            .unwrap(),
+        );
+
         //objects used by polygon render pass
         let polygon_render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
@@ -248,8 +286,9 @@ impl Renderer {
             .unwrap(),
         );
         let polygon_vertex_shader = polygon_vertex_shader::Shader::load(device.clone()).unwrap();
-        let polygon_fragment_shader = polygon_fragment_shader::Shader::load(device.clone()).unwrap();
-        let polygon_pipeline = Arc::new(
+        let polygon_fragment_shader =
+            polygon_fragment_shader::Shader::load(device.clone()).unwrap();
+        let polygon_render_pipeline = Arc::new(
             GraphicsPipeline::start()
                 .vertex_input_single_buffer::<PolygonVertex>()
                 .vertex_shader(polygon_vertex_shader.main_entry_point(), ())
@@ -383,18 +422,20 @@ impl Renderer {
             swapchain: swapchain,
 
             dynamic_state: dynamic_state,
+            rectangle_compute_pipeline: rectangle_compute_pipeline,
+            rectangle_pool: rectangle_pool,
+            rectangle_indirect_args_pool: rectangle_indirect_args_pool,
+            polygon_vertex_buffer: polygon_vertex_buffer,
 
             polygon_render_pass: polygon_render_pass,
-            polygon_pipeline: polygon_pipeline,
+            polygon_render_pipeline: polygon_render_pipeline,
             polygon_framebuffers: polygon_framebuffers,
-            polygon_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
 
             text_compute_pipeline: text_compute_pipeline,
             text_character_pool: text_character_pool,
             text_glyph_buffer: text_glyph_buffer,
             text_indirect_args_pool: text_indirect_args_pool,
             text_vertex_buffer: text_vertex_buffer,
-
             text_render_pass: text_render_pass,
             text_render_pipeline: text_render_pipeline,
             text_framebuffers: text_framebuffers,
@@ -408,7 +449,7 @@ impl Renderer {
     pub fn render(
         &mut self,
         text_character_buffer: Vec<TextCharacter>,
-        vertices: Vec<PolygonVertex>,
+        rectangle_buffer: Vec<Rectangle>,
         window_resized: bool,
     ) {
         self.recreate_swapchain |= window_resized;
@@ -454,19 +495,39 @@ impl Renderer {
             self.recreate_swapchain = true;
         }
 
-        let vertex_buffer = Arc::new(
-            self.polygon_vertex_buffer
-                .chunk(vertices.iter().cloned())
-                .unwrap(),
-        );
         let clear_values = vec![[0.1, 0.1, 0.1, 1.0].into()];
 
-        //text compute pass stuff
-        //TODO: pass real characters and text lines in stead of example.
-        let text_character_buffer = self
-            .text_character_pool
-            .chunk(text_character_buffer)
+        //rectangle compute pass stuff
+        let rectangle_indirect_args = self
+            .rectangle_indirect_args_pool
+            .chunk(iter::once(DrawIndirectCommand {
+                vertex_count: 0,
+                instance_count: 1,
+                first_vertex: 0,
+                first_instance: 0,
+            }))
             .unwrap();
+        let rectangle_compute_descriptor_set = {
+            let rectangle_buffer = self.rectangle_pool.chunk(rectangle_buffer).unwrap();
+            let layout = self
+                .rectangle_compute_pipeline
+                .layout()
+                .descriptor_set_layout(0)
+                .unwrap();
+            Arc::new(
+                PersistentDescriptorSet::start(layout.clone())
+                    .add_buffer(rectangle_buffer.clone())
+                    .unwrap()
+                    .add_buffer(self.polygon_vertex_buffer.clone())
+                    .unwrap()
+                    .add_buffer(rectangle_indirect_args.clone())
+                    .unwrap()
+                    .build()
+                    .unwrap(),
+            )
+        };
+
+        //text compute pass stuff
         let text_indirect_args = self
             .text_indirect_args_pool
             .chunk(iter::once(DrawIndirectCommand {
@@ -476,24 +537,30 @@ impl Renderer {
                 first_instance: 0,
             }))
             .unwrap();
-        let layout = self
-            .text_compute_pipeline
-            .layout()
-            .descriptor_set_layout(0)
-            .unwrap();
-        let text_compute_descriptor_set = Arc::new(
-            PersistentDescriptorSet::start(layout.clone())
-                .add_buffer(text_character_buffer.clone())
-                .unwrap()
-                .add_buffer(self.text_glyph_buffer.clone())
-                .unwrap()
-                .add_buffer(self.text_vertex_buffer.clone())
-                .unwrap()
-                .add_buffer(text_indirect_args.clone())
-                .unwrap()
-                .build()
-                .unwrap(),
-        );
+        let text_compute_descriptor_set = {
+            let text_character_buffer = self
+                .text_character_pool
+                .chunk(text_character_buffer)
+                .unwrap();
+            let layout = self
+                .text_compute_pipeline
+                .layout()
+                .descriptor_set_layout(0)
+                .unwrap();
+            Arc::new(
+                PersistentDescriptorSet::start(layout.clone())
+                    .add_buffer(text_character_buffer.clone())
+                    .unwrap()
+                    .add_buffer(self.text_glyph_buffer.clone())
+                    .unwrap()
+                    .add_buffer(self.text_vertex_buffer.clone())
+                    .unwrap()
+                    .add_buffer(text_indirect_args.clone())
+                    .unwrap()
+                    .build()
+                    .unwrap(),
+            )
+        };
 
         let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
@@ -502,6 +569,14 @@ impl Renderer {
         .unwrap();
 
         builder
+            //rectangle compute pass
+            .dispatch(
+                [1, 1, 1],
+                self.rectangle_compute_pipeline.clone(),
+                rectangle_compute_descriptor_set,
+                (),
+            )
+            .unwrap()
             //polygon render pass
             .begin_render_pass(
                 self.polygon_framebuffers[image_num].clone(),
@@ -509,10 +584,11 @@ impl Renderer {
                 clear_values,
             )
             .unwrap()
-            .draw(
-                self.polygon_pipeline.clone(),
+            .draw_indirect(
+                self.polygon_render_pipeline.clone(),
                 &self.dynamic_state,
-                vec![vertex_buffer],
+                vec![self.polygon_vertex_buffer.clone()],
+                rectangle_indirect_args.clone(),
                 (),
                 (),
             )

@@ -95,7 +95,7 @@ pub fn move_folders(folder_tree: &mut DiGraph<Node, ()>, root: NodeIndex) {
 
 pub fn draw_folder_tree(
     folder_tree: &DiGraph<Node, ()>,
-    vertex_buffer: &mut Vec<graphics::PolygonVertex>,
+    rectangle_buffer: &mut Vec<graphics::Rectangle>,
     window_dimensions: Vector2<f32>,
 ) {
     for node in folder_tree.node_indices() {
@@ -103,7 +103,7 @@ pub fn draw_folder_tree(
             folder_tree[node].position,
             folder_tree[node].color,
             Vector2::new(100.0, 100.0),
-            vertex_buffer,
+            rectangle_buffer,
             window_dimensions,
         );
     }
@@ -112,7 +112,7 @@ pub fn draw_folder_tree(
             draw_line(
                 folder_tree[node_pair.0].position,
                 folder_tree[node_pair.1].position,
-                vertex_buffer,
+                rectangle_buffer,
                 window_dimensions,
             );
         }
@@ -123,53 +123,21 @@ fn draw_folder(
     position: Vector2<f32>,
     color: [f32; 3],
     size: Vector2<f32>,
-    vertex_buffer: &mut Vec<graphics::PolygonVertex>,
+    rectangle_buffer: &mut Vec<graphics::Rectangle>,
     window_dimensions: Vector2<f32>,
 ) {
-    [
-        Vector2::new(position[0], position[1]),
-        Vector2::new(position[0] + size[0], position[1]),
-        Vector2::new(position[0], position[1] - size[1]),
-        Vector2::new(position[0], position[1] - size[1]),
-        Vector2::new(position[0] + size[0], position[1]),
-        Vector2::new(position[0] + size[0], position[1] - size[1]),
-    ]
-    .iter()
-    .map(|x| graphics::pixel_to_screen_coordinates(*x, window_dimensions))
-    .map(|p| {
-        vertex_buffer.push(graphics::PolygonVertex {
-            position: [p.x, p.y],
-            color: color,
-        })
-    })
-    .count();
+    rectangle_buffer.push(graphics::Rectangle {
+        position: graphics::pixel_to_screen_coordinates(position, window_dimensions).into(),
+        size: graphics::pixel_to_screen_coordinates(size, window_dimensions).into(),
+        color: color,
+        padding: 0.0,
+    });
 }
 
 fn draw_line(
     start: Vector2<f32>,
     end: Vector2<f32>,
-    vertex_buffer: &mut Vec<graphics::PolygonVertex>,
+    rectangle_buffer: &mut Vec<graphics::Rectangle>,
     window_dimensions: Vector2<f32>,
 ) {
-    let start = Vector2::new(start[0], start[1]);
-    let end = Vector2::new(end[0], end[1]);
-
-    let unit_line = (end - start).normalize();
-    let orthogonal = Vector2::new(unit_line.y, -unit_line.x);
-
-    let corner_0 = start + orthogonal;
-    let corner_1 = start - orthogonal;
-    let corner_2 = end + orthogonal;
-    let corner_3 = end - orthogonal;
-
-    [corner_0, corner_1, corner_2, corner_1, corner_2, corner_3]
-        .iter()
-        .map(|x| graphics::pixel_to_screen_coordinates(*x, window_dimensions))
-        .map(|p| {
-            vertex_buffer.push(graphics::PolygonVertex {
-                position: [p.x, p.y],
-                color: [0.5, 0.2, 0.2],
-            })
-        })
-        .count();
 }
