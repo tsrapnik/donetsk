@@ -33,6 +33,13 @@ const MAX_WINDOW_COUNT: usize = 10; //how many windows can be rendered at once
 const MAX_GLYPH_COUNT: usize = MAX_WINDOW_COUNT * 10; //how many letters we can render
 
 #[derive(Default, Debug, Clone, Copy)]
+pub struct Rectangle {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub color: [f32; 2],
+}
+
+#[derive(Default, Debug, Clone, Copy)]
 pub struct TextCharacter {
     pub character: u32,
     pub scale: f32,
@@ -42,11 +49,11 @@ pub struct TextCharacter {
 }
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct WindowVertex {
+pub struct PolygonVertex {
     pub position: [f32; 2],
     pub color: [f32; 3],
 }
-vulkano::impl_vertex!(WindowVertex, position, color);
+vulkano::impl_vertex!(PolygonVertex, position, color);
 
 #[derive(Default, Debug, Clone, Copy)]
 struct TextVertex {
@@ -57,17 +64,17 @@ struct TextVertex {
 }
 vulkano::impl_vertex!(TextVertex, render_position, glyph_position, color);
 
-pub mod window_vertex_shader {
+pub mod polygon_vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "src/modules/graphics/window_vertex_shader.vert"
+        path: "src/modules/graphics/polygon_vertex_shader.vert"
     }
 }
 
-pub mod window_fragment_shader {
+pub mod polygon_fragment_shader {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: "src/modules/graphics/window_fragment_shader.frag"
+        path: "src/modules/graphics/polygon_fragment_shader.frag"
     }
 }
 
@@ -99,8 +106,13 @@ pub fn pixel_to_screen_coordinates(
     position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
 }
 
-pub fn push_string(string: &str, height: f32, mut position: [f32; 2], color: [f32; 3], buffer: &mut Vec<TextCharacter>)
-{
+pub fn push_string(
+    string: &str,
+    height: f32,
+    mut position: [f32; 2],
+    color: [f32; 3],
+    buffer: &mut Vec<TextCharacter>,
+) {
     //TODO: only supports ascii.
     let original_x_position = position[0];
     let scale = height / font::LINE_HEIGHT;
@@ -113,10 +125,10 @@ pub fn push_string(string: &str, height: f32, mut position: [f32; 2], color: [f3
             }
             ' '..='~' => {
                 //regular ascii character
-                buffer.push(TextCharacter{
+                buffer.push(TextCharacter {
                     character: character as u32,
                     scale: scale,
-                    position:position,
+                    position: position,
                     color: color,
                     padding: 0.0,
                 });
@@ -136,10 +148,10 @@ pub struct Renderer {
 
     dynamic_state: DynamicState,
 
-    window_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    window_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
-    window_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    window_vertex_buffer: CpuBufferPool<WindowVertex>,
+    polygon_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
+    polygon_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+    polygon_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    polygon_vertex_buffer: CpuBufferPool<PolygonVertex>,
 
     text_compute_pipeline: Arc<ComputePipeline<PipelineLayout<text_compute_shader::Layout>>>,
     text_character_pool: CpuBufferPool<TextCharacter>,
@@ -216,8 +228,8 @@ impl Renderer {
             reference: None,
         };
 
-        //objects used by window render pass
-        let window_render_pass = Arc::new(
+        //objects used by polygon render pass
+        let polygon_render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
                 device.clone(),
                 attachments: {
@@ -235,22 +247,22 @@ impl Renderer {
             )
             .unwrap(),
         );
-        let window_vertex_shader = window_vertex_shader::Shader::load(device.clone()).unwrap();
-        let window_fragment_shader = window_fragment_shader::Shader::load(device.clone()).unwrap();
-        let window_pipeline = Arc::new(
+        let polygon_vertex_shader = polygon_vertex_shader::Shader::load(device.clone()).unwrap();
+        let polygon_fragment_shader = polygon_fragment_shader::Shader::load(device.clone()).unwrap();
+        let polygon_pipeline = Arc::new(
             GraphicsPipeline::start()
-                .vertex_input_single_buffer::<WindowVertex>()
-                .vertex_shader(window_vertex_shader.main_entry_point(), ())
+                .vertex_input_single_buffer::<PolygonVertex>()
+                .vertex_shader(polygon_vertex_shader.main_entry_point(), ())
                 .triangle_list()
                 .viewports_dynamic_scissors_irrelevant(1)
-                .fragment_shader(window_fragment_shader.main_entry_point(), ())
-                .render_pass(Subpass::from(window_render_pass.clone(), 0).unwrap())
+                .fragment_shader(polygon_fragment_shader.main_entry_point(), ())
+                .render_pass(Subpass::from(polygon_render_pass.clone(), 0).unwrap())
                 .build(device.clone())
                 .unwrap(),
         );
-        let window_framebuffers = Self::window_size_dependent_setup(
+        let polygon_framebuffers = Self::window_size_dependent_setup(
             &images,
-            window_render_pass.clone(),
+            polygon_render_pass.clone(),
             &mut dynamic_state,
         );
 
@@ -372,10 +384,10 @@ impl Renderer {
 
             dynamic_state: dynamic_state,
 
-            window_render_pass: window_render_pass,
-            window_pipeline: window_pipeline,
-            window_framebuffers: window_framebuffers,
-            window_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
+            polygon_render_pass: polygon_render_pass,
+            polygon_pipeline: polygon_pipeline,
+            polygon_framebuffers: polygon_framebuffers,
+            polygon_vertex_buffer: CpuBufferPool::vertex_buffer(device.clone()),
 
             text_compute_pipeline: text_compute_pipeline,
             text_character_pool: text_character_pool,
@@ -393,7 +405,12 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, text_character_buffer: Vec<TextCharacter>, vertices: Vec<WindowVertex>, window_resized: bool) {
+    pub fn render(
+        &mut self,
+        text_character_buffer: Vec<TextCharacter>,
+        vertices: Vec<PolygonVertex>,
+        window_resized: bool,
+    ) {
         self.recreate_swapchain |= window_resized;
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
@@ -409,9 +426,9 @@ impl Renderer {
                 };
 
             self.swapchain = new_swapchain;
-            self.window_framebuffers = Self::window_size_dependent_setup(
+            self.polygon_framebuffers = Self::window_size_dependent_setup(
                 &new_images,
-                self.window_render_pass.clone(),
+                self.polygon_render_pass.clone(),
                 &mut self.dynamic_state,
             );
             self.text_framebuffers = Self::window_size_dependent_setup(
@@ -438,7 +455,7 @@ impl Renderer {
         }
 
         let vertex_buffer = Arc::new(
-            self.window_vertex_buffer
+            self.polygon_vertex_buffer
                 .chunk(vertices.iter().cloned())
                 .unwrap(),
         );
@@ -485,15 +502,15 @@ impl Renderer {
         .unwrap();
 
         builder
-            //window render pass
+            //polygon render pass
             .begin_render_pass(
-                self.window_framebuffers[image_num].clone(),
+                self.polygon_framebuffers[image_num].clone(),
                 false,
                 clear_values,
             )
             .unwrap()
             .draw(
-                self.window_pipeline.clone(),
+                self.polygon_pipeline.clone(),
                 &self.dynamic_state,
                 vec![vertex_buffer],
                 (),
