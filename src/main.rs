@@ -59,19 +59,12 @@ fn main() {
 
             folder_tree::move_folders(&mut folder_tree, root);
 
-            // folder_tree::draw_folder_tree(
-            //     &folder_tree,
-            //     &mut rectangles,
-            //     Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
-            // );
-
             let mut rectangle_buffer = Vec::new();
-            rectangle_buffer.push(graphics::Rectangle {
-                position: [0.0, 0.0],
-                size: [0.5, 0.5],
-                color: [1.0, 0.0, 0.0],
-                padding: 0.0,
-            });
+            folder_tree::draw_folder_tree(
+                &folder_tree,
+                &mut rectangle_buffer,
+                Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
+            );
 
             let mut character_buffer = Vec::with_capacity(11);
             graphics::push_string(
