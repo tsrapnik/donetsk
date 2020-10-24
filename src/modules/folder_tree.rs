@@ -20,8 +20,8 @@ pub fn browse_folder(folder_tree: &mut DiGraph<Node, ()>, parent_node: NodeIndex
             //note: in theory it is possible the folder gets deleted in between the two reads, but this is virtually impossible.
             let subfolders = std::fs::read_dir(path).unwrap();
             folder_tree[parent_node].ideal_distance =
-                (subfolder_count * 40.0).max(300.0) + folder_tree[parent_node].ideal_distance;
-            let subfolder_distance = (subfolder_count * 20.0).max(150.0);
+                (subfolder_count * 30.0).max(300.0) + folder_tree[parent_node].ideal_distance;
+            let subfolder_distance = (subfolder_count * 10.0).max(150.0);
             use rand::Rng;
             let mut rng = rand::thread_rng();
             let color = [

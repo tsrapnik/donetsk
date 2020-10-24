@@ -53,7 +53,7 @@ pub struct TextCharacter {
 pub struct PolygonVertex {
     pub position: [f32; 2],
     pub color: [f32; 3],
-    padding: [f32; 3], //padding to comply with std140 rules
+    padding: [f32; 3], //padding to comply with std140 rules TODO: check if this is necessary for device local vertexbuffers.
 }
 vulkano::impl_vertex!(PolygonVertex, position, color);
 
@@ -562,73 +562,106 @@ impl Renderer {
             )
         };
 
-        let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
-            self.device.clone(),
-            self.queue.family(),
-        )
-        .unwrap();
-
-        builder
-            //rectangle compute pass
-            .dispatch(
-                [1, 1, 1],
-                self.rectangle_compute_pipeline.clone(),
-                rectangle_compute_descriptor_set,
-                (),
+        let rectangle_compute_command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queue.family(),
             )
-            .unwrap()
-            //polygon render pass
-            .begin_render_pass(
-                self.polygon_framebuffers[image_num].clone(),
-                false,
-                clear_values,
-            )
-            .unwrap()
-            .draw_indirect(
-                self.polygon_render_pipeline.clone(),
-                &self.dynamic_state,
-                vec![self.polygon_vertex_buffer.clone()],
-                rectangle_indirect_args.clone(),
-                (),
-                (),
-            )
-            .unwrap()
-            .end_render_pass()
-            .unwrap()
-            //text compute pass
-            .dispatch(
-                [1, 1, 1],
-                self.text_compute_pipeline.clone(),
-                text_compute_descriptor_set.clone(),
-                (),
-            )
-            .unwrap()
-            //text render pass
-            .begin_render_pass(
-                self.text_framebuffers[image_num].clone(),
-                false,
-                vec![ClearValue::None],
-            )
-            .unwrap()
-            .draw_indirect(
-                self.text_render_pipeline.clone(),
-                &self.dynamic_state,
-                vec![self.text_vertex_buffer.clone()],
-                text_indirect_args.clone(),
-                self.text_set.clone(),
-                (),
-            )
-            .unwrap()
-            .end_render_pass()
             .unwrap();
-        let command_buffer = builder.build().unwrap();
+            builder
+                .dispatch(
+                    [1, 1, 1],
+                    self.rectangle_compute_pipeline.clone(),
+                    rectangle_compute_descriptor_set,
+                    (),
+                )
+                .unwrap();
+            builder.build().unwrap()
+        };
+
+        let polygon_render_command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queue.family(),
+            )
+            .unwrap();
+            builder
+                .begin_render_pass(
+                    self.polygon_framebuffers[image_num].clone(),
+                    false,
+                    clear_values,
+                )
+                .unwrap()
+                .draw_indirect(
+                    self.polygon_render_pipeline.clone(),
+                    &self.dynamic_state,
+                    vec![self.polygon_vertex_buffer.clone()],
+                    rectangle_indirect_args.clone(),
+                    (),
+                    (),
+                )
+                .unwrap()
+                .end_render_pass()
+                .unwrap();
+            builder.build().unwrap()
+        };
+
+        let text_compute_command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queue.family(),
+            )
+            .unwrap();
+            builder
+                .dispatch(
+                    [1, 1, 1],
+                    self.text_compute_pipeline.clone(),
+                    text_compute_descriptor_set.clone(),
+                    (),
+                )
+                .unwrap();
+            builder.build().unwrap()
+        };
+
+        let text_render_command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queue.family(),
+            )
+            .unwrap();
+            builder
+                .begin_render_pass(
+                    self.text_framebuffers[image_num].clone(),
+                    false,
+                    vec![ClearValue::None],
+                )
+                .unwrap()
+                .draw_indirect(
+                    self.text_render_pipeline.clone(),
+                    &self.dynamic_state,
+                    vec![self.text_vertex_buffer.clone()],
+                    text_indirect_args.clone(),
+                    self.text_set.clone(),
+                    (),
+                )
+                .unwrap()
+                .end_render_pass()
+                .unwrap();
+            builder.build().unwrap()
+        };
 
         let future = self
             .previous_frame_end
             .take()
             .unwrap()
             .join(acquire_future)
-            .then_execute(self.queue.clone(), command_buffer)
+            .then_execute(self.queue.clone(), rectangle_compute_command_buffer) //TODO: run compute commands simultaniously, but start render command only when corresponding compute command is done.
+            .unwrap()
+            .then_execute(self.queue.clone(), polygon_render_command_buffer)
+            .unwrap()
+            .then_execute(self.queue.clone(), text_compute_command_buffer)
+            .unwrap()
+            .then_execute(self.queue.clone(), text_render_command_buffer)
             .unwrap()
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
             .then_signal_fence_and_flush();
