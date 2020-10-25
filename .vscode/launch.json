@@ -8,6 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "debug on linux",
+            "program": "${workspaceRoot}/target/debug/donetsk",
             "args": [],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "Rust: cargo build - donetsk",
@@ -17,7 +18,15 @@
             "request": "launch",
             "name": "debug unit tests on linux",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "debug ftn_parser on linux",
+            "program": "${workspaceRoot}/target/debug/examples/ftn_parser",
+            "args": [],
+            "cwd": "${workspaceFolder}",
         },
         {
             "type": "cppvsdbg",
@@ -33,7 +42,7 @@
             "request": "launch",
             "name": "debug unit tests on windows",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
         }
         {
             "type": "cppvsdbg",
@@ -41,7 +50,7 @@
             "name": "debug ftn_parser on windows",
             "program": "${workspaceRoot}/target/debug/examples/ftn_parser.exe",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
         },
     ]
 }
