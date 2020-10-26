@@ -4,7 +4,7 @@ use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
-    command_buffer::{AutoCommandBufferBuilder, DrawIndirectCommand, DynamicState},
+    command_buffer::{AutoCommandBufferBuilder, DrawIndirectCommand, DynamicState, CommandBuffer},
     descriptor::{
         descriptor_set::{DescriptorSet, PersistentDescriptorSet},
         pipeline_layout::PipelineLayout,
@@ -666,17 +666,19 @@ impl Renderer {
             builder.build().unwrap()
         };
 
+        //by creating the compute futures seperately and joining them at appropriate places with the render futures,
+        //the compute passes are run simultaniously.
+        let rectangle_compute_future = rectangle_compute_command_buffer.execute(self.queue.clone()).unwrap();
+        let text_compute_future = text_compute_command_buffer.execute(self.queue.clone()).unwrap();
         let future = self
             .previous_frame_end
             .take()
             .unwrap()
             .join(acquire_future)
-            .then_execute(self.queue.clone(), rectangle_compute_command_buffer) //TODO: run compute commands simultaniously, but start render command only when corresponding compute command is done.
-            .unwrap()
+            .join(rectangle_compute_future)
             .then_execute(self.queue.clone(), polygon_render_command_buffer)
             .unwrap()
-            .then_execute(self.queue.clone(), text_compute_command_buffer)
-            .unwrap()
+            .join(text_compute_future)
             .then_execute(self.queue.clone(), text_render_command_buffer)
             .unwrap()
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
