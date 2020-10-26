@@ -562,24 +562,7 @@ impl Renderer {
             )
         };
 
-        // let rectangle_compute_command_buffer = {
-        //     let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
-        //         self.device.clone(),
-        //         self.queue.family(),
-        //     )
-        //     .unwrap();
-        //     builder
-        //         .dispatch(
-        //             [1, 1, 1],
-        //             self.rectangle_compute_pipeline.clone(),
-        //             rectangle_compute_descriptor_set,
-        //             (),
-        //         )
-        //         .unwrap();
-        //     builder.build().unwrap()
-        // };
-
-        let polygon_render_command_buffer = {
+        let rectangle_compute_command_buffer = {
             let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
                 self.queue.family(),
@@ -592,7 +575,17 @@ impl Renderer {
                     rectangle_compute_descriptor_set,
                     (),
                 )
-                .unwrap()
+                .unwrap();
+            builder.build().unwrap()
+        };
+
+        let polygon_render_command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queue.family(),
+            )
+            .unwrap();
+            builder
                 .begin_render_pass(
                     self.polygon_framebuffers[image_num].clone(),
                     false,
@@ -621,24 +614,7 @@ impl Renderer {
             builder.build().unwrap()
         };
 
-        // let text_compute_command_buffer = {
-        //     let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
-        //         self.device.clone(),
-        //         self.queue.family(),
-        //     )
-        //     .unwrap();
-        //     builder
-        //         .dispatch(
-        //             [1, 1, 1],
-        //             self.text_compute_pipeline.clone(),
-        //             text_compute_descriptor_set.clone(),
-        //             (),
-        //         )
-        //         .unwrap();
-        //     builder.build().unwrap()
-        // };
-
-        let text_render_command_buffer = {
+        let text_compute_command_buffer = {
             let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
                 self.queue.family(),
@@ -651,7 +627,17 @@ impl Renderer {
                     text_compute_descriptor_set.clone(),
                     (),
                 )
-                .unwrap()
+                .unwrap();
+            builder.build().unwrap()
+        };
+
+        let text_render_command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queue.family(),
+            )
+            .unwrap();
+            builder
                 .begin_render_pass(
                     self.text_framebuffers[image_num].clone(),
                     false,
@@ -685,12 +671,12 @@ impl Renderer {
             .take()
             .unwrap()
             .join(acquire_future)
-            // .then_execute(self.queue.clone(), rectangle_compute_command_buffer) //TODO: run compute commands simultaniously, but start render command only when corresponding compute command is done.
-            // .unwrap()
+            .then_execute(self.queue.clone(), rectangle_compute_command_buffer) //TODO: run compute commands simultaniously, but start render command only when corresponding compute command is done.
+            .unwrap()
             .then_execute(self.queue.clone(), polygon_render_command_buffer)
             .unwrap()
-            // .then_execute(self.queue.clone(), text_compute_command_buffer)
-            // .unwrap()
+            .then_execute(self.queue.clone(), text_compute_command_buffer)
+            .unwrap()
             .then_execute(self.queue.clone(), text_render_command_buffer)
             .unwrap()
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
