@@ -308,7 +308,7 @@ impl Renderer {
         //objects used by text compute pass
         let text_character_pool: CpuBufferPool<TextCharacter> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
-        let (text_glyph_buffer, _) = //TODO: use future.
+        let (text_glyph_buffer, glyph_layout_future) =
             ImmutableBuffer::from_data(font::GLYPH_LAYOUTS, BufferUsage::all(), queue.clone()).unwrap();
         let text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
@@ -364,8 +364,8 @@ impl Renderer {
             &mut dynamic_state,
         );
 
-        let (text_set, text_future) = {
-            let (glyph_atlas, text_future) = {
+        let (text_set, glyph_atlas_future) = {
+            let (glyph_atlas, glyph_atlas_future) = {
                 let png_bytes = include_bytes!("../../font/deja_vu_sans_mono.png").to_vec();
                 let cursor = Cursor::new(png_bytes);
                 let decoder = png::Decoder::new(cursor);
@@ -410,10 +410,11 @@ impl Renderer {
                     .build()
                     .unwrap(),
             );
-            (set, text_future)
+            (set, glyph_atlas_future)
         };
 
-        let previous_frame_end = Some(Box::new(text_future) as Box<dyn GpuFuture>);
+        //join all futures for loading buffers to the gpu. flush them and wait till they're done.
+        glyph_layout_future.join(glyph_atlas_future).then_signal_fence_and_flush().unwrap().wait(None).unwrap();
 
         //move all the stuff we need to keep for rendering in the renderer struct.
         Renderer {
@@ -441,7 +442,7 @@ impl Renderer {
             text_framebuffers: text_framebuffers,
             text_set: text_set,
 
-            previous_frame_end: previous_frame_end,
+            previous_frame_end: Some(sync::now(device.clone()).boxed()),
             recreate_swapchain: false,
         }
     }
