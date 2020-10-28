@@ -593,22 +593,14 @@ impl Renderer {
                     clear_values,
                 )
                 .unwrap()
-                .draw(
+                .draw_indirect(
                     self.polygon_render_pipeline.clone(),
                     &self.dynamic_state,
                     vec![self.polygon_vertex_buffer.clone()],
+                    rectangle_indirect_args.clone(),
                     (),
                     (),
-
                 )
-                // .draw_indirect(
-                //     self.polygon_render_pipeline.clone(),
-                //     &self.dynamic_state,
-                //     vec![self.polygon_vertex_buffer.clone()],
-                //     rectangle_indirect_args.clone(),
-                //     (),
-                //     (),
-                // )
                 .unwrap()
                 .end_render_pass()
                 .unwrap();
@@ -645,22 +637,14 @@ impl Renderer {
                     vec![ClearValue::None],
                 )
                 .unwrap()
-                .draw(
+                .draw_indirect(
                     self.text_render_pipeline.clone(),
                     &self.dynamic_state,
                     vec![self.text_vertex_buffer.clone()],
+                    text_indirect_args.clone(),
                     self.text_set.clone(),
                     (),
-
                 )
-                // .draw_indirect(
-                //     self.text_render_pipeline.clone(),
-                //     &self.dynamic_state,
-                //     vec![self.text_vertex_buffer.clone()],
-                //     text_indirect_args.clone(),
-                //     self.text_set.clone(),
-                //     (),
-                // )
                 .unwrap()
                 .end_render_pass()
                 .unwrap();
@@ -677,9 +661,9 @@ impl Renderer {
             .unwrap()
             .join(acquire_future)
             .join(rectangle_compute_future)
+            .join(text_compute_future) //TODO: why does joining just before executing text_render_command_buffer not work?
             .then_execute(self.queue.clone(), polygon_render_command_buffer)
             .unwrap()
-            .join(text_compute_future)
             .then_execute(self.queue.clone(), text_render_command_buffer)
             .unwrap()
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
