@@ -41,7 +41,7 @@ pub struct Rectangle {
     pub position: [f32; 2],
     pub size: [f32; 2],
     pub color: [f32; 3],
-    pub padding: f32, //padding to comply with vulkan alignment rules
+    pub padding: f32, //padding to comply with vulkan alignment rules TODO: checkout library to cope with padding.
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -54,7 +54,7 @@ pub struct TextCharacter {
 }
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct PolygonVertex {
+struct PolygonVertex {
     pub position: [f32; 2],
     pub padding_0: [f32; 2], //padding to comply with vulkan alignment rules
     pub color: [f32; 3],
