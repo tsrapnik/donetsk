@@ -1,5 +1,3 @@
-use std::time;
-
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use nalgebra::Vector2;
@@ -16,17 +14,11 @@ fn main() {
     let event_loop = EventLoop::new();
     let mut renderer = graphics::Renderer::new(&event_loop);
 
-    let initial_dimensions = [1000, 1000];
-    let dimensions = initial_dimensions;
-
     let mut folder_tree = DiGraph::new();
     let root = folder_tree.add_node(folder_tree::Node {
         name: "C:/Users/tsrapnik".to_string(),
-        position: Vector2::new(
-            0.5 * (initial_dimensions[0] as f32),
-            0.5 * (initial_dimensions[1] as f32),
-        ),
-        ideal_distance: 0.0,
+        position: Vector2::new(0.0, 0.0),
+        size: Vector2::from([folder_tree::FOLDER_SIDE; 2]),
         color: [0.5, 0.2, 0.2],
     });
 
@@ -52,27 +44,14 @@ fn main() {
             window_resized = true;
         }
         Event::RedrawEventsCleared => {
-            let frame_start = time::Instant::now();
-
-            folder_tree[root].position.x = 0.5 * (dimensions[0] as f32);
-            folder_tree[root].position.y = 0.5 * (dimensions[1] as f32);
-
-            folder_tree::move_folders(&mut folder_tree, root);
+            let frame_start = std::time::Instant::now();
 
             let mut rectangle_buffer = Vec::new();
-            folder_tree::draw_folder_tree(
+            let mut character_buffer = Vec::new();
+            folder_tree::draw(
                 &folder_tree,
-                &mut rectangle_buffer,
-                Vector2::new(dimensions[0] as f32, dimensions[1] as f32),
-            );
-
-            let mut character_buffer = Vec::with_capacity(11);
-            graphics::push_string(
-                "hello\nworld.",
-                0.3,
-                [0.0, 0.0],
-                [0.0, 0.0, 0.0],
                 &mut character_buffer,
+                &mut rectangle_buffer,
             );
 
             println!("time lost by cpu scheduling is ignored.");
