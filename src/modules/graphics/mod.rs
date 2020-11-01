@@ -4,7 +4,7 @@ use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
-    command_buffer::{AutoCommandBufferBuilder, DrawIndirectCommand, DynamicState, CommandBuffer},
+    command_buffer::{AutoCommandBufferBuilder, CommandBuffer, DrawIndirectCommand, DynamicState},
     descriptor::{
         descriptor_set::{DescriptorSet, PersistentDescriptorSet},
         pipeline_layout::PipelineLayout,
@@ -28,6 +28,11 @@ use vulkano::{
 use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
+
+//when set to true we measure different parst of the rendering loop and print it to the console. for
+//this we have to let the cpu wait for the gpu to complete its tasks, so DEBUG_MODE has a
+//performance penalty.
+const DEBUG_MODE: bool = true;
 
 const MAX_RECTANGLE_COUNT: usize = 10; //how many windows can be rendered at once
 const MAX_GLYPH_COUNT: usize = MAX_RECTANGLE_COUNT * 10; //how many letters we can render
@@ -309,7 +314,8 @@ impl Renderer {
         let text_character_pool: CpuBufferPool<TextCharacter> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
         let (text_glyph_buffer, glyph_layout_future) =
-            ImmutableBuffer::from_data(font::GLYPH_LAYOUTS, BufferUsage::all(), queue.clone()).unwrap();
+            ImmutableBuffer::from_data(font::GLYPH_LAYOUTS, BufferUsage::all(), queue.clone())
+                .unwrap();
         let text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
         let text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>> = DeviceLocalBuffer::array(
@@ -414,7 +420,12 @@ impl Renderer {
         };
 
         //join all futures for loading buffers to the gpu. flush them and wait till they're done.
-        glyph_layout_future.join(glyph_atlas_future).then_signal_fence_and_flush().unwrap().wait(None).unwrap();
+        glyph_layout_future
+            .join(glyph_atlas_future)
+            .then_signal_fence_and_flush()
+            .unwrap()
+            .wait(None)
+            .unwrap();
 
         //move all the stuff we need to keep for rendering in the renderer struct.
         Renderer {
@@ -453,6 +464,8 @@ impl Renderer {
         rectangle_buffer: Vec<Rectangle>,
         window_resized: bool,
     ) {
+        let start_rendering = std::time::Instant::now();
+
         self.recreate_swapchain |= window_resized;
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
@@ -653,13 +666,13 @@ impl Renderer {
 
         //by creating the compute futures seperately and joining them at appropriate places with the render futures,
         //the compute passes are run simultaniously.
-        let rectangle_compute_future = rectangle_compute_command_buffer.execute(self.queue.clone()).unwrap();
-        let text_compute_future = text_compute_command_buffer.execute(self.queue.clone()).unwrap();
-        let future = self
-            .previous_frame_end
-            .take()
-            .unwrap()
-            .join(acquire_future)
+        let rectangle_compute_future = rectangle_compute_command_buffer
+            .execute(self.queue.clone())
+            .unwrap();
+        let text_compute_future = text_compute_command_buffer
+            .execute(self.queue.clone())
+            .unwrap();
+        let future = acquire_future
             .join(rectangle_compute_future)
             .join(text_compute_future) //TODO: why does joining just before executing text_render_command_buffer not work?
             .then_execute(self.queue.clone(), polygon_render_command_buffer)
@@ -669,17 +682,35 @@ impl Renderer {
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
             .then_signal_fence_and_flush();
 
-        match future {
-            Ok(future) => {
-                self.previous_frame_end = Some(Box::new(future) as Box<_>);
-            }
-            Err(FlushError::OutOfDate) => {
-                self.recreate_swapchain = true;
-                self.previous_frame_end = Some(Box::new(sync::now(self.device.clone())) as Box<_>);
-            }
-            Err(e) => {
-                println!("{:?}", e);
-                self.previous_frame_end = Some(Box::new(sync::now(self.device.clone())) as Box<_>);
+        if DEBUG_MODE {
+            let cpu_render_time = start_rendering.elapsed();
+            println!("cpu render time: {:?}", cpu_render_time);
+
+            //wait till gpu rendering finished, so we can measure its duration.
+            future.unwrap().wait(None).unwrap();
+
+            let gpu_render_time = start_rendering.elapsed() - cpu_render_time;
+            println!("gpu render timer: {:?}", gpu_render_time);
+
+            //provide dummy future, since rendering in fact already finished.
+            self.previous_frame_end = Some(Box::new(sync::now(self.device.clone())) as Box<_>);
+        } else {
+            //in non debug mode actually pass the future to the next frame, so we let the gpu run in
+            //parallel.
+            match future {
+                Ok(future) => {
+                    self.previous_frame_end = Some(Box::new(future) as Box<_>);
+                }
+                Err(FlushError::OutOfDate) => {
+                    self.recreate_swapchain = true;
+                    self.previous_frame_end =
+                        Some(Box::new(sync::now(self.device.clone())) as Box<_>);
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                    self.previous_frame_end =
+                        Some(Box::new(sync::now(self.device.clone())) as Box<_>);
+                }
             }
         }
     }

@@ -21,7 +21,7 @@ fn main() {
 
     let mut folder_tree = DiGraph::new();
     let root = folder_tree.add_node(folder_tree::Node {
-        name: "/home/tsrapnik".to_string(),
+        name: "C:/Users/tsrapnik".to_string(),
         position: Vector2::new(
             0.5 * (initial_dimensions[0] as f32),
             0.5 * (initial_dimensions[1] as f32),
@@ -52,7 +52,7 @@ fn main() {
             window_resized = true;
         }
         Event::RedrawEventsCleared => {
-            let now = time::Instant::now();
+            let frame_start = time::Instant::now();
 
             folder_tree[root].position.x = 0.5 * (dimensions[0] as f32);
             folder_tree[root].position.y = 0.5 * (dimensions[1] as f32);
@@ -75,10 +75,13 @@ fn main() {
                 &mut character_buffer,
             );
 
+            println!("time lost by cpu scheduling is ignored.");
+            println!("cpu processing time: {:?}", frame_start.elapsed());
+
             renderer.render(character_buffer, rectangle_buffer, window_resized);
             window_resized = false;
 
-            println!("{:?}", now.elapsed());
+            println!("frame time: {:?}\n", frame_start.elapsed());
         }
         _ => (),
     })
