@@ -12,7 +12,9 @@ struct Rectangle {
 
 struct PolygonVertex {
     vec2 position;
+    vec2 padding_0;
     vec3 color;
+    float padding_1;
 };
 
 layout(set = 0, binding = 0) uniform RectangleBuffer {

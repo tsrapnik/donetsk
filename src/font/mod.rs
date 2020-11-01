@@ -5,7 +5,7 @@ pub struct GlyphLayout {
     pub size: [f32; 2], //size of the glyph
     pub offset: [f32; 2], //offset from the cursor where the glyp should be rendered
     pub advance: f32, //offset the cursor should move horizontally for next glyph
-    pub padding: f32, //padding to comply with std140 rules
+    pub padding: f32, //padding to comply with vulkan alignment rules
 }
 
 pub const LINE_HEIGHT: f32 = 0.2;

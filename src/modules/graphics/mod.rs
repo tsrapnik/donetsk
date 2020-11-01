@@ -1,5 +1,4 @@
 use crate::font;
-use nalgebra::Vector2;
 use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
@@ -29,7 +28,7 @@ use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
-//when set to true we measure different parst of the rendering loop and print it to the console. for
+//when set to true we measure different parts of the rendering loop and print it to the console. for
 //this we have to let the cpu wait for the gpu to complete its tasks, so DEBUG_MODE has a
 //performance penalty.
 const DEBUG_MODE: bool = true;
@@ -42,7 +41,7 @@ pub struct Rectangle {
     pub position: [f32; 2],
     pub size: [f32; 2],
     pub color: [f32; 3],
-    pub padding: f32, //padding to comply with std140 rules
+    pub padding: f32, //padding to comply with vulkan alignment rules
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -51,23 +50,24 @@ pub struct TextCharacter {
     pub scale: f32,
     pub position: [f32; 2],
     pub color: [f32; 3],
-    padding: f32, //padding to comply with std140 rules
+    padding: f32, //padding to comply with vulkan alignment rules
 }
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct PolygonVertex {
     pub position: [f32; 2],
+    pub padding_0: [f32; 2], //padding to comply with vulkan alignment rules
     pub color: [f32; 3],
-    padding: [f32; 3], //padding to comply with std140 rules TODO: check if this is necessary for device local vertexbuffers.
+    pub padding_1: f32, //padding to comply with vulkan alignment rules
 }
-vulkano::impl_vertex!(PolygonVertex, position, color);
+vulkano::impl_vertex!(PolygonVertex, position, padding_0, color, padding_1);
 
 #[derive(Default, Debug, Clone, Copy)]
 struct TextVertex {
     pub render_position: [f32; 2],
     pub glyph_position: [f32; 2],
     pub color: [f32; 3],
-    padding: f32, //padding to comply with std140 rules
+    padding: f32, //padding to comply with vulkan alignment rules
 }
 vulkano::impl_vertex!(TextVertex, render_position, glyph_position, color);
 
@@ -111,13 +111,6 @@ pub mod text_fragment_shader {
         ty: "fragment",
         path: "src/modules/graphics/text_fragment_shader.frag"
     }
-}
-
-pub fn pixel_to_screen_coordinates(
-    position: Vector2<f32>,
-    window_dimensions: Vector2<f32>,
-) -> Vector2<f32> {
-    position.zip_map(&window_dimensions, |p, w| 2.0 / w * p - 1.0)
 }
 
 pub fn push_string(
