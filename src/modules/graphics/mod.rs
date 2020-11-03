@@ -33,8 +33,10 @@ use winit::window::{Window, WindowBuilder};
 //performance penalty.
 const DEBUG_MODE: bool = true;
 
-const MAX_RECTANGLE_COUNT: usize = 10; //how many windows can be rendered at once
-const MAX_GLYPH_COUNT: usize = MAX_RECTANGLE_COUNT * 10; //how many letters we can render
+const MAX_RECTANGLE_COUNT: usize = 100; //how many windows can be rendered at once
+const VERTICES_PER_RECTANGLE: usize = 6;
+const MAX_GLYPH_COUNT: usize = MAX_RECTANGLE_COUNT * 100; //how many letters we can render
+const VERTICES_PER_GLYPH: usize = 6;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Rectangle {
@@ -248,7 +250,7 @@ impl Renderer {
         let polygon_vertex_buffer: Arc<DeviceLocalBuffer<[PolygonVertex]>> =
             DeviceLocalBuffer::array(
                 device.clone(),
-                MAX_RECTANGLE_COUNT * 6, //TODO: change buffer size at runtime, when more than MAX_RECTANGLE_COUNT.
+                MAX_RECTANGLE_COUNT * VERTICES_PER_RECTANGLE, //TODO: change buffer size at runtime, when more than MAX_RECTANGLE_COUNT.
                 BufferUsage::all(),
                 vec![queue.family()],
             )
@@ -313,7 +315,7 @@ impl Renderer {
             CpuBufferPool::new(device.clone(), BufferUsage::all());
         let text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>> = DeviceLocalBuffer::array(
             device.clone(),
-            MAX_GLYPH_COUNT * 6, //TODO: change buffer size at runtime, when more than MAX_GLYPH_COUNT.
+            MAX_GLYPH_COUNT * VERTICES_PER_GLYPH, //TODO: change buffer size at runtime, when more than MAX_GLYPH_COUNT.
             BufferUsage::all(),
             vec![queue.family()],
         )
@@ -505,6 +507,7 @@ impl Renderer {
         let clear_values = vec![[0.1, 0.1, 0.1, 1.0].into()];
 
         //rectangle compute pass stuff
+        let rectangle_buffer_length = rectangle_buffer.len() as u32;
         let rectangle_indirect_args = self
             .rectangle_indirect_args_pool
             .chunk(iter::once(DrawIndirectCommand {
@@ -535,6 +538,7 @@ impl Renderer {
         };
 
         //text compute pass stuff
+        let text_character_buffer_length = text_character_buffer.len() as u32;
         let text_indirect_args = self
             .text_indirect_args_pool
             .chunk(iter::once(DrawIndirectCommand {
@@ -577,7 +581,7 @@ impl Renderer {
             .unwrap();
             builder
                 .dispatch(
-                    [1, 1, 1],
+                    [rectangle_buffer_length, 1, 1],
                     self.rectangle_compute_pipeline.clone(),
                     rectangle_compute_descriptor_set,
                     (),
@@ -621,7 +625,7 @@ impl Renderer {
             .unwrap();
             builder
                 .dispatch(
-                    [1, 1, 1],
+                    [text_character_buffer_length, 1, 1],
                     self.text_compute_pipeline.clone(),
                     text_compute_descriptor_set.clone(),
                     (),

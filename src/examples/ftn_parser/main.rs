@@ -1,7 +1,7 @@
 use std::{env, fmt::Write, fs, path::Path};
 
 fn main() {
-    const ASCII_TABLE_LENGHT: usize = 128;
+    const ASCII_TABLE_LENGTH: usize = 128;
     const TEXTURE_SIDE: f32 = 512.0;
     let mut fnt_path = env::current_dir().unwrap();
     fnt_path.push(Path::new("src/font/deja_vu_sans_mono.fnt"));
@@ -17,8 +17,8 @@ fn main() {
         advance: f32,
         padding: f32,
     }
-    let mut glyph_layouts: [GlyphLayout; ASCII_TABLE_LENGHT] =
-        [Default::default(); ASCII_TABLE_LENGHT];
+    let mut glyph_layouts: [GlyphLayout; ASCII_TABLE_LENGTH] =
+        [Default::default(); ASCII_TABLE_LENGTH];
 
     let lines = fnt_file.lines();
     for line in lines {
@@ -77,7 +77,7 @@ pub struct GlyphLayout {
     write!(
         &mut output_string,
         "pub const GLYPH_LAYOUTS: [GlyphLayout; {}] = [\n",
-        ASCII_TABLE_LENGHT,
+        ASCII_TABLE_LENGTH,
     )
     .unwrap();
     for glyph_layout in glyph_layouts.iter() {

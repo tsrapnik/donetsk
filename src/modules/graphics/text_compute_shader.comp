@@ -2,8 +2,9 @@
 
 const uint glyph_layouts_size = 128;
 const uint max_glyph_count = 100 * 100; //TODO: don't have two definitions of max_glyph_count.
+const uint vertices_per_glyph = 6;
 
-layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 struct TextCharacter {
     uint character;
@@ -34,7 +35,7 @@ layout(set = 0, binding = 1) uniform GlyphBuffer {
 };
 
 layout(set = 0, binding = 2) buffer Output {
-    TextVertex text_vertex_buffer[max_glyph_count * 6];
+    TextVertex text_vertex_buffer[max_glyph_count * vertices_per_glyph];
 };
 
 layout(set = 0, binding = 3) buffer IndirectDrawArgs {
@@ -45,10 +46,11 @@ layout(set = 0, binding = 3) buffer IndirectDrawArgs {
 };
 
 void main() {
-    uint vertex_index = atomicAdd(vertices, 6);
+    atomicAdd(vertices, vertices_per_glyph);
 
     //if index is not in glyp_layouts table, just map it to its last element to avoid reading out of bounds (last element is delete and won't get rendered).
     uint glyph_index = min(text_character_buffer[gl_GlobalInvocationID.x].character, glyph_layouts_size - 1);
+    uint vertex_index = gl_GlobalInvocationID.x * vertices_per_glyph;
 
     float scale = text_character_buffer[gl_GlobalInvocationID.x].scale;
     vec2 position = text_character_buffer[gl_GlobalInvocationID.x].position;

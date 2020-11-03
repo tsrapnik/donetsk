@@ -23,11 +23,11 @@ fn main() {
     });
 
     folder_tree::browse_folder(&mut folder_tree, root);
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(1));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(2));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(3));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(4));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(5));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(1));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(2));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(3));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(4));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(5));
 
     let mut window_resized = false;
     event_loop.run(move |event, _, control_flow| match event {
@@ -50,9 +50,14 @@ fn main() {
             let mut character_buffer = Vec::new();
             folder_tree::draw(
                 &folder_tree,
+                root,
                 &mut character_buffer,
                 &mut rectangle_buffer,
             );
+
+            for rectangle in &rectangle_buffer {
+                println!("{:?}", rectangle);
+            }
 
             println!("time lost by cpu scheduling is ignored.");
             println!("cpu processing time: {:?}", frame_start.elapsed());

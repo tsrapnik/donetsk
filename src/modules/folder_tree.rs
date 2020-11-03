@@ -1,5 +1,8 @@
 use nalgebra::Vector2;
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::{
+    graph::{DiGraph, NodeIndex},
+    visit::Bfs,
+};
 use std::fs;
 
 use crate::modules::graphics;
@@ -56,7 +59,7 @@ pub fn browse_folder(folder_tree: &mut DiGraph<Node, ()>, parent_node: NodeIndex
         for (index, subfolder) in subfolders.into_iter().enumerate() {
             let offset = Vector2::new(
                 (index as f32) % subfolder_row_count,
-                (index as f32) / subfolder_row_count,
+                ((index as f32) / subfolder_row_count).floor(),
             );
             let subfolder_position = folder_tree[parent_node].position
                 + Vector2::from([FOLDER_MARGIN; 2])
@@ -74,10 +77,12 @@ pub fn browse_folder(folder_tree: &mut DiGraph<Node, ()>, parent_node: NodeIndex
 
 pub fn draw(
     folder_tree: &DiGraph<Node, ()>,
+    root: NodeIndex,
     text_character_buffer: &mut Vec<graphics::TextCharacter>,
     rectangle_buffer: &mut Vec<graphics::Rectangle>,
 ) {
-    for node in folder_tree.node_indices() {
+    let mut bfs = Bfs::new(&*folder_tree, root);
+    while let Some(node) = bfs.next(&*folder_tree) {
         rectangle_buffer.push(graphics::Rectangle {
             position: folder_tree[node].position.into(),
             size: folder_tree[node].size.into(),
