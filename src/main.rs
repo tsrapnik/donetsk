@@ -22,10 +22,10 @@ fn main() {
 
     folder_tree::browse_folder(&mut folder_tree, root);
     folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(1));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(2));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(3));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(4));
-    folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(5));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(2));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(3));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(4));
+    // folder_tree::browse_folder(&mut folder_tree, NodeIndex::new(5));
 
     let mut window_resized = false;
     event_loop.run(move |event, _, control_flow| match event {

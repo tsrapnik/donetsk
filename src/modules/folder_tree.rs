@@ -24,48 +24,6 @@ pub fn browse_folder(folder_tree: &mut DiGraph<Node, ()>, parent_node: NodeIndex
         //collect subfolders in a vec, so we can count them while still looping through them
         //afterwards.
         let subfolders: Vec<fs::DirEntry> = subfolders.filter_map(Result::ok).collect();
-        let subfolder_count = subfolders.len();
-
-        //calculate how large the parent folder should be to fit subfolders.
-        let subfolder_row_count = (subfolder_count as f64).sqrt().ceil() as f32;
-        let new_parent_side_length = subfolder_row_count * (FOLDER_SIDE + FOLDER_MARGIN) + FOLDER_MARGIN;
-        let offset = [
-            new_parent_side_length - folder_tree[parent_node].size[0],
-            new_parent_side_length - folder_tree[parent_node].size[1],
-        ];
-
-        //move the siblings of the parent node out of the way and do the same for its uncles and
-        //aunts, grand uncles and grand aunts, etc.
-        let mut current_node = parent_node;
-        loop {
-            //we only need to move the siblings past bottom right corner of current node away.
-            let current_node_far_corner = [
-                folder_tree[current_node].position[0] + folder_tree[current_node].size[0],
-                folder_tree[current_node].position[1] + folder_tree[current_node].size[1],
-            ];
-
-            //expand the node itself.
-            folder_tree[current_node].size[0] += offset[0];
-            folder_tree[current_node].size[1] += offset[1];
-
-            if let Some(current_node_parent) = folder_tree.neighbors_directed(current_node, Direction::Incoming).next() {
-                //move siblings out of the way.
-                let mut sibling_edges = folder_tree.neighbors_directed(current_node_parent, Direction::Outgoing).detach();
-                while let Some(sibling_edge) = sibling_edges.next_edge(&folder_tree) {
-                    let (_, sibling) = folder_tree.edge_endpoints(sibling_edge).unwrap();
-                    if folder_tree[sibling].position[0] > current_node_far_corner[0] {
-                        folder_tree[sibling].position[0] += offset[0];
-                    }
-                    if folder_tree[sibling].position[1] > current_node_far_corner[1] {
-                        folder_tree[sibling].position[1] += offset[1];
-                    }
-                }
-                current_node = current_node_parent;
-            } else
-            {
-                break;
-            }
-        }
 
         //decide color of the subfolders.
         use rand::Rng;
@@ -77,6 +35,7 @@ pub fn browse_folder(folder_tree: &mut DiGraph<Node, ()>, parent_node: NodeIndex
         ];
 
         //place subfolders in parent folder.
+        let subfolder_row_count = (subfolders.len() as f64).sqrt().ceil() as f32;
         for (index, subfolder) in subfolders.into_iter().enumerate() {
             let offset = [
                 (index as f32) % subfolder_row_count,
@@ -98,6 +57,78 @@ pub fn browse_folder(folder_tree: &mut DiGraph<Node, ()>, parent_node: NodeIndex
             });
             folder_tree.add_edge(parent_node, new_node, ());
         }
+
+        //now increase the parent folder, so it encapsulates all children and push away the siblings
+        //that would otherwise overlap. recursively do the same for all ancestors.
+        let mut current_node = parent_node;
+        let mut offset = [
+            subfolder_row_count * (FOLDER_SIDE + FOLDER_MARGIN) + FOLDER_MARGIN
+                - folder_tree[current_node].size[0],
+            subfolder_row_count * (FOLDER_SIDE + FOLDER_MARGIN) + FOLDER_MARGIN
+                - folder_tree[current_node].size[1],
+        ];
+        loop {
+            //expand parent folder.
+            folder_tree[current_node].size[0] += offset[0];
+            folder_tree[current_node].size[1] += offset[1];
+
+            let top_left_corner = [
+                folder_tree[current_node].position[0] - FOLDER_MARGIN,
+                folder_tree[current_node].position[1] - FOLDER_MARGIN,
+            ];
+            let bottom_right_corner = [
+                folder_tree[current_node].position[0]
+                    + folder_tree[current_node].size[0]
+                    + FOLDER_MARGIN,
+                folder_tree[current_node].position[1]
+                    + folder_tree[current_node].size[1]
+                    + FOLDER_MARGIN,
+            ];
+
+            if let Some(current_node_parent) = folder_tree
+                .neighbors_directed(current_node, Direction::Incoming)
+                .next()
+            {
+                //move siblings out of the way.
+                //first check how far we need to move the siblings to avoid overlap.
+                let mut sibling_edges = folder_tree
+                    .neighbors_directed(current_node_parent, Direction::Outgoing)
+                    .detach();
+                offset = [0.0; 2];
+                while let Some(sibling_edge) = sibling_edges.next_edge(&folder_tree) {
+                    let (_, sibling) = folder_tree.edge_endpoints(sibling_edge).unwrap();
+                    if (folder_tree[sibling].position[0] > top_left_corner[0])
+                        && (folder_tree[sibling].position[0] < bottom_right_corner[0])
+                        && (folder_tree[sibling].position[0] > top_left_corner[0])
+                        && (folder_tree[sibling].position[1] < bottom_right_corner[1])
+                    {
+                        offset[0] = offset[0]
+                            .max(bottom_right_corner[0] - folder_tree[sibling].position[0]);
+                        offset[1] = offset[1]
+                            .max(bottom_right_corner[1] - folder_tree[sibling].position[1]);
+                    }
+                }
+                //then actually move the relevant siblings.
+                let mut sibling_edges = folder_tree
+                    .neighbors_directed(current_node_parent, Direction::Outgoing)
+                    .detach();
+                while let Some(sibling_edge) = sibling_edges.next_edge(&folder_tree) {
+                    let (_, sibling) = folder_tree.edge_endpoints(sibling_edge).unwrap();
+                    if (folder_tree[sibling].position[0] > top_left_corner[0])
+                        && (folder_tree[sibling].position[0] < bottom_right_corner[0])
+                        && (folder_tree[sibling].position[0] > top_left_corner[0])
+                        && (folder_tree[sibling].position[1] < bottom_right_corner[1])
+                    {
+                        folder_tree[sibling].position[0] += offset[0];
+                        folder_tree[sibling].position[1] += offset[1];
+                    }
+                }
+
+                current_node = current_node_parent;
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -116,8 +147,13 @@ pub fn draw(
 
             padding: 0.0,
         });
+        let name = folder_tree[node]
+            .name
+            .split(&['\\', '/'][..])
+            .last()
+            .unwrap();
         graphics::push_string(
-            &folder_tree[node].name,
+            name,
             0.05,
             folder_tree[node].position.into(),
             [0.0; 3],
