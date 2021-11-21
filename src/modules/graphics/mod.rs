@@ -3,26 +3,25 @@ use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
-    command_buffer::{AutoCommandBufferBuilder, CommandBuffer, DrawIndirectCommand, DynamicState},
-    descriptor::{
-        descriptor_set::{DescriptorSet, PersistentDescriptorSet},
-        pipeline_layout::PipelineLayout,
-        PipelineLayoutAbstract,
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, DrawIndirectCommand, PrimaryCommandBuffer,
+        SubpassContents,
     },
-    device::{Device, DeviceExtensions},
+    descriptor_set::{DescriptorSet, PersistentDescriptorSet},
+    device::{physical::PhysicalDevice, Device, DeviceExtensions},
     format::{ClearValue, Format},
-    framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass},
-    image::{Dimensions, ImageUsage, ImmutableImage, SwapchainImage},
-    instance::{Instance, PhysicalDevice},
-    pipeline::{viewport::Viewport, ComputePipeline, GraphicsPipeline, GraphicsPipelineAbstract},
+    image::{
+        view::ImageView, ImageDimensions, ImageUsage, ImmutableImage, MipmapsCount, SwapchainImage,
+    },
+    instance::Instance,
+    pipeline::{viewport::Viewport, ComputePipeline, GraphicsPipeline, PipelineBindPoint},
+    render_pass::{Framebuffer, FramebufferAbstract, RenderPass, Subpass},
     sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode},
     swapchain,
-    swapchain::{
-        AcquireError, ColorSpace, FullscreenExclusive, PresentMode, SurfaceTransform, Swapchain,
-        SwapchainCreationError,
-    },
+    swapchain::{AcquireError, Swapchain, SwapchainCreationError},
     sync,
     sync::{FlushError, GpuFuture},
+    Version,
 };
 use vulkano_win::VkSurfaceBuild;
 use winit::event_loop::EventLoop;
@@ -33,10 +32,10 @@ use winit::window::{Window, WindowBuilder};
 //performance penalty.
 const DEBUG_MODE: bool = true;
 
-const MAX_RECTANGLE_COUNT: usize = 100; //how many windows can be rendered at once
-const VERTICES_PER_RECTANGLE: usize = 6;
-const MAX_GLYPH_COUNT: usize = MAX_RECTANGLE_COUNT * 100; //how many letters we can render
-const VERTICES_PER_GLYPH: usize = 6;
+const MAX_RECTANGLE_COUNT: u64 = 100; //how many windows can be rendered at once
+const VERTICES_PER_RECTANGLE: u64 = 6;
+const MAX_GLYPH_COUNT: u64 = MAX_RECTANGLE_COUNT * 100; //how many letters we can render
+const VERTICES_PER_GLYPH: u64 = 6;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Rectangle {
@@ -52,7 +51,7 @@ pub struct TextCharacter {
     pub scale: f32,
     pub position: [f32; 2],
     pub color: [f32; 3],
-    padding: f32, //padding to comply with vulkan alignment rules
+    _padding: f32, //padding to comply with vulkan alignment rules
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -69,7 +68,7 @@ struct TextVertex {
     pub render_position: [f32; 2],
     pub glyph_position: [f32; 2],
     pub color: [f32; 3],
-    padding: f32, //padding to comply with vulkan alignment rules
+    _padding: f32, //padding to comply with vulkan alignment rules
 }
 vulkano::impl_vertex!(TextVertex, render_position, glyph_position, color);
 
@@ -139,7 +138,7 @@ pub fn push_string(
                     scale: scale,
                     position: position,
                     color: color,
-                    padding: 0.0,
+                    _padding: 0.0,
                 });
                 position[0] += font::GLYPH_LAYOUTS[character as usize].advance * scale;
             }
@@ -154,29 +153,27 @@ pub struct Renderer {
     device: Arc<Device>,
     queue: Arc<vulkano::device::Queue>,
     swapchain: Arc<Swapchain<Window>>,
+    viewport: Viewport,
 
-    dynamic_state: DynamicState,
-
-    rectangle_compute_pipeline:
-        Arc<ComputePipeline<PipelineLayout<rectangle_compute_shader::Layout>>>,
+    rectangle_compute_pipeline: Arc<ComputePipeline>,
     rectangle_pool: CpuBufferPool<Rectangle>,
     rectangle_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
     polygon_vertex_buffer: Arc<DeviceLocalBuffer<[PolygonVertex]>>,
 
-    polygon_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    polygon_render_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
-    polygon_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    polygon_render_pass: Arc<RenderPass>,
+    polygon_render_pipeline: Arc<GraphicsPipeline>,
+    polygon_framebuffers: Vec<Arc<dyn FramebufferAbstract>>,
 
-    text_compute_pipeline: Arc<ComputePipeline<PipelineLayout<text_compute_shader::Layout>>>,
+    text_compute_pipeline: Arc<ComputePipeline>,
     text_character_pool: CpuBufferPool<TextCharacter>,
     text_glyph_buffer: Arc<ImmutableBuffer<[font::GlyphLayout; font::GLYPH_LAYOUTS.len()]>>,
     text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
     text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>>,
 
-    text_render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    text_render_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
-    text_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    text_set: Arc<dyn DescriptorSet + Send + Sync>,
+    text_render_pass: Arc<RenderPass>,
+    text_render_pipeline: Arc<GraphicsPipeline>,
+    text_framebuffers: Vec<Arc<dyn FramebufferAbstract>>,
+    text_set: Arc<dyn DescriptorSet>,
 
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swapchain: bool,
@@ -186,12 +183,11 @@ impl Renderer {
     pub fn new(event_loop: &EventLoop<()>) -> Renderer {
         //objects used by all renderpasses
         let extensions = vulkano_win::required_extensions();
-        let instance = Instance::new(None, &extensions, None).unwrap();
+        let instance = Instance::new(None, Version::V1_1, &extensions, None).unwrap();
         let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
         let surface = WindowBuilder::new()
             .build_vk_surface(event_loop, instance.clone())
             .unwrap();
-        let window = surface.window();
         let queue_family = physical
             .queue_families()
             .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
@@ -209,37 +205,20 @@ impl Renderer {
         )
         .unwrap();
         let queue = queues.next().unwrap();
-        let initial_dimensions: [u32; 2] = window.inner_size().into();
         let (swapchain, images) = {
             let caps = surface.capabilities(physical).unwrap();
-            let alpha = caps.supported_composite_alpha.iter().next().unwrap();
+            let composite_alpha = caps.supported_composite_alpha.iter().next().unwrap();
             let format = caps.supported_formats[0].0;
-            Swapchain::new(
-                device.clone(),
-                surface.clone(),
-                caps.min_image_count,
-                format,
-                initial_dimensions,
-                1,
-                ImageUsage::color_attachment(),
-                &queue,
-                SurfaceTransform::Identity,
-                alpha,
-                PresentMode::Fifo,
-                FullscreenExclusive::Default,
-                true,
-                ColorSpace::SrgbNonLinear,
-            )
-            .unwrap()
-        };
-
-        let mut dynamic_state = DynamicState {
-            line_width: None,
-            viewports: None,
-            scissors: None,
-            compare_mask: None,
-            write_mask: None,
-            reference: None,
+            let dimensions: [u32; 2] = surface.window().inner_size().into();
+            Swapchain::start(device.clone(), surface.clone())
+                .num_images(caps.min_image_count)
+                .format(format)
+                .dimensions(dimensions)
+                .usage(ImageUsage::color_attachment())
+                .sharing_mode(&queue)
+                .composite_alpha(composite_alpha)
+                .build()
+                .unwrap()
         };
 
         //objects uses by polygon compute pass
@@ -262,6 +241,8 @@ impl Renderer {
                 device.clone(),
                 &rectangle_compute_shader.main_entry_point(),
                 &(),
+                None,
+                |_| {},
             )
             .unwrap(),
         );
@@ -299,11 +280,13 @@ impl Renderer {
                 .build(device.clone())
                 .unwrap(),
         );
-        let polygon_framebuffers = Self::window_size_dependent_setup(
-            &images,
-            polygon_render_pass.clone(),
-            &mut dynamic_state,
-        );
+        let mut viewport = Viewport {
+            origin: [0.0, 0.0],
+            dimensions: [0.0, 0.0],
+            depth_range: 0.0..1.0,
+        };
+        let polygon_framebuffers =
+            Self::window_size_dependent_setup(&images, polygon_render_pass.clone(), &mut viewport);
 
         //objects used by text compute pass
         let text_character_pool: CpuBufferPool<TextCharacter> =
@@ -322,8 +305,14 @@ impl Renderer {
         .unwrap();
         let text_compute_shader = text_compute_shader::Shader::load(device.clone()).unwrap();
         let text_compute_pipeline = Arc::new(
-            ComputePipeline::new(device.clone(), &text_compute_shader.main_entry_point(), &())
-                .unwrap(),
+            ComputePipeline::new(
+                device.clone(),
+                &text_compute_shader.main_entry_point(),
+                &(),
+                None,
+                |_| {},
+            )
+            .unwrap(),
         );
 
         //objects used by text render pass
@@ -359,32 +348,33 @@ impl Renderer {
                 .build(device.clone())
                 .unwrap(),
         );
-        let text_framebuffers = Self::window_size_dependent_setup(
-            &images,
-            text_render_pass.clone(),
-            &mut dynamic_state,
-        );
+        let text_framebuffers =
+            Self::window_size_dependent_setup(&images, text_render_pass.clone(), &mut viewport);
 
         let (text_set, glyph_atlas_future) = {
             let (glyph_atlas, glyph_atlas_future) = {
                 let png_bytes = include_bytes!("../../font/deja_vu_sans_mono.png").to_vec();
                 let cursor = Cursor::new(png_bytes);
                 let decoder = png::Decoder::new(cursor);
-                let (info, mut reader) = decoder.read_info().unwrap();
-                let dimensions = Dimensions::Dim2d {
+                let mut reader = decoder.read_info().unwrap();
+                let info = reader.info();
+                let dimensions = ImageDimensions::Dim2d {
                     width: info.width,
                     height: info.height,
+                    array_layers: 1,
                 };
                 let mut image_data = Vec::new();
                 image_data.resize((info.width * info.height * 4) as usize, 0);
                 reader.next_frame(&mut image_data).unwrap();
-                ImmutableImage::from_iter(
+                let (image, future) = ImmutableImage::from_iter(
                     image_data.iter().cloned(),
                     dimensions,
-                    Format::R8G8B8A8Srgb, //TODO: change to r8 file format.
+                    MipmapsCount::One,
+                    Format::R8G8B8A8_SRGB, //TODO: change to r8 file format.
                     queue.clone(),
                 )
-                .unwrap()
+                .unwrap();
+                (ImageView::new(image).unwrap(), future)
             };
             let sampler = Sampler::new(
                 device.clone(),
@@ -402,15 +392,14 @@ impl Renderer {
             .unwrap();
             let layout = text_render_pipeline
                 .layout()
-                .descriptor_set_layout(0)
+                .descriptor_set_layouts()
+                .get(0)
                 .unwrap();
-            let set = Arc::new(
-                PersistentDescriptorSet::start(layout.clone())
-                    .add_sampled_image(glyph_atlas.clone(), sampler.clone())
-                    .unwrap()
-                    .build()
-                    .unwrap(),
-            );
+            let mut set_builder = PersistentDescriptorSet::start(layout.clone());
+            set_builder
+                .add_sampled_image(glyph_atlas.clone(), sampler.clone())
+                .unwrap();
+            let set = Arc::new(set_builder.build().unwrap());
             (set, glyph_atlas_future)
         };
 
@@ -427,8 +416,8 @@ impl Renderer {
             device: device.clone(),
             queue: queue,
             swapchain: swapchain,
+            viewport: viewport,
 
-            dynamic_state: dynamic_state,
             rectangle_compute_pipeline: rectangle_compute_pipeline,
             rectangle_pool: rectangle_pool,
             rectangle_indirect_args_pool: rectangle_indirect_args_pool,
@@ -465,11 +454,10 @@ impl Renderer {
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
-        let dimensions: [u32; 2] = self.swapchain.surface().window().inner_size().into();
-
         if self.recreate_swapchain {
+            let dimensions: [u32; 2] = self.swapchain.surface().window().inner_size().into();
             let (new_swapchain, new_images) =
-                match self.swapchain.recreate_with_dimensions(dimensions) {
+                match self.swapchain.recreate().dimensions(dimensions).build() {
                     Ok(r) => r,
                     Err(SwapchainCreationError::UnsupportedDimensions) => return, //TODO: return replaces continue?
                     Err(err) => panic!("{:?}", err),
@@ -479,12 +467,12 @@ impl Renderer {
             self.polygon_framebuffers = Self::window_size_dependent_setup(
                 &new_images,
                 self.polygon_render_pass.clone(),
-                &mut self.dynamic_state,
+                &mut self.viewport,
             );
             self.text_framebuffers = Self::window_size_dependent_setup(
                 &new_images,
                 self.text_render_pass.clone(),
-                &mut self.dynamic_state,
+                &mut self.viewport,
             );
 
             self.recreate_swapchain = false;
@@ -522,19 +510,18 @@ impl Renderer {
             let layout = self
                 .rectangle_compute_pipeline
                 .layout()
-                .descriptor_set_layout(0)
+                .descriptor_set_layouts()
+                .get(0)
                 .unwrap();
-            Arc::new(
-                PersistentDescriptorSet::start(layout.clone())
-                    .add_buffer(rectangle_buffer.clone())
-                    .unwrap()
-                    .add_buffer(self.polygon_vertex_buffer.clone())
-                    .unwrap()
-                    .add_buffer(rectangle_indirect_args.clone())
-                    .unwrap()
-                    .build()
-                    .unwrap(),
-            )
+            let mut set_builder = PersistentDescriptorSet::start(layout.clone());
+            set_builder
+                .add_buffer(Arc::new(rectangle_buffer))
+                .unwrap()
+                .add_buffer(self.polygon_vertex_buffer.clone())
+                .unwrap()
+                .add_buffer(Arc::new(rectangle_indirect_args.clone()))
+                .unwrap();
+            Arc::new(set_builder.build().unwrap())
         };
 
         //text compute pass stuff
@@ -556,61 +543,61 @@ impl Renderer {
             let layout = self
                 .text_compute_pipeline
                 .layout()
-                .descriptor_set_layout(0)
+                .descriptor_set_layouts()
+                .get(0)
                 .unwrap();
-            Arc::new(
-                PersistentDescriptorSet::start(layout.clone())
-                    .add_buffer(text_character_buffer.clone())
-                    .unwrap()
-                    .add_buffer(self.text_glyph_buffer.clone())
-                    .unwrap()
-                    .add_buffer(self.text_vertex_buffer.clone())
-                    .unwrap()
-                    .add_buffer(text_indirect_args.clone())
-                    .unwrap()
-                    .build()
-                    .unwrap(),
-            )
+            let mut set_builder = PersistentDescriptorSet::start(layout.clone());
+            set_builder
+                .add_buffer(Arc::new(text_character_buffer))
+                .unwrap()
+                .add_buffer(self.text_glyph_buffer.clone())
+                .unwrap()
+                .add_buffer(self.text_vertex_buffer.clone())
+                .unwrap()
+                .add_buffer(Arc::new(text_indirect_args.clone()))
+                .unwrap();
+            Arc::new(set_builder.build().unwrap())
         };
 
         let rectangle_compute_command_buffer = {
-            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+            let mut builder = AutoCommandBufferBuilder::primary(
                 self.device.clone(),
                 self.queue.family(),
+                CommandBufferUsage::OneTimeSubmit,
             )
             .unwrap();
             builder
-                .dispatch(
-                    [rectangle_buffer_length, 1, 1],
-                    self.rectangle_compute_pipeline.clone(),
+                .bind_pipeline_compute(self.rectangle_compute_pipeline.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    self.rectangle_compute_pipeline.layout().clone(),
+                    0,
                     rectangle_compute_descriptor_set,
-                    (),
                 )
+                .dispatch([rectangle_buffer_length, 1, 1])
                 .unwrap();
             builder.build().unwrap()
         };
 
         let polygon_render_command_buffer = {
-            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+            let mut builder = AutoCommandBufferBuilder::primary(
                 self.device.clone(),
                 self.queue.family(),
+                CommandBufferUsage::OneTimeSubmit,
             )
             .unwrap();
+
             builder
                 .begin_render_pass(
                     self.polygon_framebuffers[image_num].clone(),
-                    false,
+                    SubpassContents::Inline,
                     clear_values,
                 )
                 .unwrap()
-                .draw_indirect(
-                    self.polygon_render_pipeline.clone(),
-                    &self.dynamic_state,
-                    vec![self.polygon_vertex_buffer.clone()],
-                    rectangle_indirect_args.clone(),
-                    (),
-                    (),
-                )
+                .set_viewport(0, [self .viewport.clone()])
+                .bind_pipeline_graphics(self.polygon_render_pipeline.clone())
+                .bind_vertex_buffers(0, self.polygon_vertex_buffer.clone())
+                .draw_indirect(rectangle_indirect_args)
                 .unwrap()
                 .end_render_pass()
                 .unwrap();
@@ -618,43 +605,49 @@ impl Renderer {
         };
 
         let text_compute_command_buffer = {
-            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+            let mut builder = AutoCommandBufferBuilder::primary(
                 self.device.clone(),
                 self.queue.family(),
+                CommandBufferUsage::OneTimeSubmit,
             )
             .unwrap();
             builder
-                .dispatch(
-                    [text_character_buffer_length, 1, 1],
-                    self.text_compute_pipeline.clone(),
-                    text_compute_descriptor_set.clone(),
-                    (),
+                .bind_pipeline_compute(self.text_compute_pipeline.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Compute,
+                    self.text_compute_pipeline.layout().clone(),
+                    0,
+                    text_compute_descriptor_set,
                 )
+                .dispatch([text_character_buffer_length, 1, 1])
                 .unwrap();
             builder.build().unwrap()
         };
 
         let text_render_command_buffer = {
-            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+            let mut builder = AutoCommandBufferBuilder::primary(
                 self.device.clone(),
                 self.queue.family(),
+                CommandBufferUsage::OneTimeSubmit,
             )
             .unwrap();
             builder
                 .begin_render_pass(
                     self.text_framebuffers[image_num].clone(),
-                    false,
+                    SubpassContents::Inline,
                     vec![ClearValue::None],
                 )
                 .unwrap()
-                .draw_indirect(
-                    self.text_render_pipeline.clone(),
-                    &self.dynamic_state,
-                    vec![self.text_vertex_buffer.clone()],
-                    text_indirect_args.clone(),
+                .set_viewport(0, [self.viewport.clone()])
+                .bind_pipeline_graphics(self.text_render_pipeline.clone())
+                .bind_vertex_buffers(0, self.text_vertex_buffer.clone())
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    self.text_render_pipeline.layout().clone(),
+                    0,
                     self.text_set.clone(),
-                    (),
                 )
+                .draw_indirect(text_indirect_args)
                 .unwrap()
                 .end_render_pass()
                 .unwrap();
@@ -715,28 +708,23 @@ impl Renderer {
     //this method is called once during initialization, then again whenever the window is resized.
     fn window_size_dependent_setup(
         images: &[Arc<SwapchainImage<Window>>],
-        render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-        dynamic_state: &mut DynamicState,
-    ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+        render_pass: Arc<RenderPass>,
+        viewport: &mut Viewport,
+    ) -> Vec<Arc<dyn FramebufferAbstract>> {
         let dimensions = images[0].dimensions();
-
-        let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions: [dimensions[0] as f32, dimensions[1] as f32],
-            depth_range: 0.0..1.0,
-        };
-        dynamic_state.viewports = Some(vec![viewport]);
+        viewport.dimensions = [dimensions[0] as f32, dimensions[1] as f32];
 
         images
             .iter()
             .map(|image| {
+                let view = ImageView::new(image.clone()).unwrap();
                 Arc::new(
                     Framebuffer::start(render_pass.clone())
-                        .add(image.clone())
+                        .add(view)
                         .unwrap()
                         .build()
                         .unwrap(),
-                ) as Arc<dyn FramebufferAbstract + Send + Sync>
+                ) as Arc<dyn FramebufferAbstract>
             })
             .collect::<Vec<_>>()
     }

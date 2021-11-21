@@ -2,17 +2,17 @@
 name = "donetsk"
 version = "0.1.0"
 authors = ["tsrapnik <yannick-peeters@outlook.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-vulkano = "0.19"
-vulkano-shaders = "0.19"
-vulkano-win = "0.19"
-winit = "0.22"
+vulkano = "0.26"
+vulkano-shaders = "0.26"
+vulkano-win = "0.26"
+winit = "0.25"
 petgraph = "0.4.13"
 rand = "0.7.0"
 nalgebra = "0.18"
-png = "0.15.0"
+png = "0.17"
 
 [dev-dependencies]
 
