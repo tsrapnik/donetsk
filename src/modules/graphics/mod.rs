@@ -437,7 +437,7 @@ impl Renderer {
             text_framebuffers: text_framebuffers,
             text_set: text_set,
 
-            previous_frame_end: Some(sync::now(device.clone()).boxed()),
+            previous_frame_end: Some(sync::now(device).boxed()),
             recreate_swapchain: false,
         }
     }
@@ -594,7 +594,7 @@ impl Renderer {
                     clear_values,
                 )
                 .unwrap()
-                .set_viewport(0, [self .viewport.clone()])
+                .set_viewport(0, [self.viewport.clone()])
                 .bind_pipeline_graphics(self.polygon_render_pipeline.clone())
                 .bind_vertex_buffers(0, self.polygon_vertex_buffer.clone())
                 .draw_indirect(rectangle_indirect_args)
@@ -662,7 +662,11 @@ impl Renderer {
         let text_compute_future = text_compute_command_buffer
             .execute(self.queue.clone())
             .unwrap();
-        let future = acquire_future
+        let future = self
+            .previous_frame_end
+            .take()
+            .unwrap()
+            .join(acquire_future)
             .join(rectangle_compute_future)
             .join(text_compute_future) //TODO: why does joining just before executing text_render_command_buffer not work?
             .then_execute(self.queue.clone(), polygon_render_command_buffer)
@@ -683,23 +687,21 @@ impl Renderer {
             println!("gpu render timer: {:?}", gpu_render_time);
 
             //provide dummy future, since rendering in fact already finished.
-            self.previous_frame_end = Some(Box::new(sync::now(self.device.clone())) as Box<_>);
+            self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
         } else {
             //in non debug mode actually pass the future to the next frame, so we let the gpu run in
             //parallel.
             match future {
                 Ok(future) => {
-                    self.previous_frame_end = Some(Box::new(future) as Box<_>);
+                    self.previous_frame_end = Some(future.boxed());
                 }
                 Err(FlushError::OutOfDate) => {
                     self.recreate_swapchain = true;
-                    self.previous_frame_end =
-                        Some(Box::new(sync::now(self.device.clone())) as Box<_>);
+                    self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
                 }
                 Err(e) => {
                     println!("{:?}", e);
-                    self.previous_frame_end =
-                        Some(Box::new(sync::now(self.device.clone())) as Box<_>);
+                    self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
                 }
             }
         }

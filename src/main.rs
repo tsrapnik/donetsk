@@ -8,6 +8,9 @@ mod modules;
 use modules::folder_tree;
 use modules::graphics;
 
+//when set to true we measure different parts of the rendering loop and print it to the console.
+const DEBUG_MODE: bool = false;
+
 fn main() {
     let event_loop = EventLoop::new();
     let mut renderer = graphics::Renderer::new(&event_loop);
@@ -46,19 +49,18 @@ fn main() {
 
             let mut rectangle_buffer = Vec::new();
             let mut character_buffer = Vec::new();
-            folder_tree::draw(
-                &folder_tree,
-                &mut character_buffer,
-                &mut rectangle_buffer,
-            );
+            folder_tree::draw(&folder_tree, &mut character_buffer, &mut rectangle_buffer);
 
-            println!("time lost by cpu scheduling is ignored.");
-            println!("cpu processing time: {:?}", frame_start.elapsed());
-
+            if DEBUG_MODE {
+                println!("time lost by cpu scheduling is ignored.");
+                println!("cpu processing time: {:?}", frame_start.elapsed());
+            }
             renderer.render(character_buffer, rectangle_buffer, window_resized);
             window_resized = false;
 
-            println!("frame time: {:?}\n", frame_start.elapsed());
+            if DEBUG_MODE {
+                println!("frame time: {:?}\n", frame_start.elapsed());
+            }
         }
         _ => (),
     })
