@@ -137,27 +137,29 @@ pub fn draw(
     text_character_buffer: &mut Vec<graphics::TextCharacter>,
     rectangle_buffer: &mut Vec<graphics::Rectangle>,
 ) {
+    graphics::push_string("00_|",0.5,[0.0,0.0],[1.0,1.0,1.0],text_character_buffer)
     //at this stage rectangles are already ordered from back to front, so we can just loop through
     //them.
-    for node in folder_tree.node_indices() {
-        rectangle_buffer.push(graphics::Rectangle {
-            position: folder_tree[node].position.into(),
-            size: folder_tree[node].size.into(),
-            color: folder_tree[node].color,
+    //TODO: Uncomment again.
+    // for node in folder_tree.node_indices() {
+    //     rectangle_buffer.push(graphics::Rectangle {
+    //         position: folder_tree[node].position.into(),
+    //         size: folder_tree[node].size.into(),
+    //         color: folder_tree[node].color,
 
-            padding: 0.0,
-        });
-        let name = folder_tree[node]
-            .name
-            .split(&['\\', '/'][..])
-            .last()
-            .unwrap();
-        graphics::push_string(
-            name,
-            0.05,
-            folder_tree[node].position.into(),
-            [0.0; 3],
-            text_character_buffer,
-        );
-    }
+    //         padding: 0.0,
+    //     });
+    //     let name = folder_tree[node]
+    //         .name
+    //         .split(&['\\', '/'][..])
+    //         .last()
+    //         .unwrap();
+    //     graphics::push_string(
+    //         name,
+    //         0.05,
+    //         folder_tree[node].position.into(),
+    //         [0.0; 3],
+    //         text_character_buffer,
+    //     );
+    // }
 }
