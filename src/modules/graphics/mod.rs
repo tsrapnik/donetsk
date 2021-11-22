@@ -668,11 +668,14 @@ impl Renderer {
             .unwrap();
         text_compute_future.wait(None).unwrap();
         let content = self.text_vertex_buffer.read().unwrap();
-        for instance in content.iter() {
+        for (index, instance) in content.iter().enumerate() {
             println!("{:?}", instance);
+            if (index > 30) {
+                break;
+            }
         }
         println!("\n\n\n\n\n\n\n\n\n\n");
-        loop{};
+        loop {}
         let future = self
             .previous_frame_end
             .take()
