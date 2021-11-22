@@ -2,7 +2,7 @@ use crate::font;
 use png;
 use std::{io::Cursor, iter, sync::Arc};
 use vulkano::{
-    buffer::{BufferUsage, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
+    buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool, DeviceLocalBuffer, ImmutableBuffer},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, DrawIndirectCommand, PrimaryCommandBuffer,
         SubpassContents,
@@ -168,7 +168,7 @@ pub struct Renderer {
     text_character_pool: CpuBufferPool<TextCharacter>,
     text_glyph_buffer: Arc<ImmutableBuffer<[font::GlyphLayout; font::GLYPH_LAYOUTS.len()]>>,
     text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand>,
-    text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>>,
+    text_vertex_buffer: Arc<CpuAccessibleBuffer<[TextVertex]>>,
 
     text_render_pass: Arc<RenderPass>,
     text_render_pipeline: Arc<GraphicsPipeline>,
@@ -296,13 +296,15 @@ impl Renderer {
                 .unwrap();
         let text_indirect_args_pool: CpuBufferPool<DrawIndirectCommand> =
             CpuBufferPool::new(device.clone(), BufferUsage::all());
-        let text_vertex_buffer: Arc<DeviceLocalBuffer<[TextVertex]>> = DeviceLocalBuffer::array(
-            device.clone(),
-            MAX_GLYPH_COUNT * VERTICES_PER_GLYPH, //TODO: change buffer size at runtime, when more than MAX_GLYPH_COUNT.
-            BufferUsage::all(),
-            vec![queue.family()],
-        )
-        .unwrap();
+        let text_vertex_buffer: Arc<CpuAccessibleBuffer<[TextVertex]>> = unsafe {
+            CpuAccessibleBuffer::uninitialized_array(
+                device.clone(),
+                MAX_GLYPH_COUNT * VERTICES_PER_GLYPH, //TODO: change buffer size at runtime, when more than MAX_GLYPH_COUNT.
+                BufferUsage::all(),
+                true,
+            )
+            .unwrap()
+        };
         let text_compute_shader = text_compute_shader::Shader::load(device.clone()).unwrap();
         let text_compute_pipeline = Arc::new(
             ComputePipeline::new(
@@ -661,14 +663,23 @@ impl Renderer {
             .unwrap();
         let text_compute_future = text_compute_command_buffer
             .execute(self.queue.clone())
+            .unwrap()
+            .then_signal_fence_and_flush()
             .unwrap();
+        text_compute_future.wait(None).unwrap();
+        let content = self.text_vertex_buffer.read().unwrap();
+        for instance in content.iter() {
+            println!("{:?}", instance);
+        }
+        println!("\n\n\n\n\n\n\n\n\n\n");
+        loop{};
         let future = self
             .previous_frame_end
             .take()
             .unwrap()
             .join(acquire_future)
             .join(rectangle_compute_future)
-            .join(text_compute_future) //TODO: why does joining just before executing text_render_command_buffer not work?
+            // .join(text_compute_future) //TODO: why does joining just before executing text_render_command_buffer not work?
             .then_execute(self.queue.clone(), polygon_render_command_buffer)
             .unwrap()
             .then_execute(self.queue.clone(), text_render_command_buffer)
