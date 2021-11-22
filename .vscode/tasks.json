@@ -1,49 +1,5 @@
 {
 	"version": "2.0.0",
 	"tasks": [
-		{
-			"type": "cargo",
-			"subcommand": "build",
-			"problemMatcher": [
-				"$rustc"
-			],
-			"group": "build",
-			"label": "Rust: cargo build - donetsk"
-		},
-		{
-			"type": "cargo",
-			"subcommand": "check",
-			"problemMatcher": [
-				"$rustc"
-			],
-			"group": "build",
-			"label": "Rust: cargo check - donetsk"
-		},
-		{
-			"type": "cargo",
-			"subcommand": "clean",
-			"problemMatcher": [
-				"$rustc"
-			],
-			"group": "clean",
-			"label": "Rust: cargo clean - donetsk"
-		},
-		{
-			"type": "cargo",
-			"subcommand": "run",
-			"problemMatcher": [
-				"$rustc"
-			],
-			"label": "Rust: cargo run - donetsk"
-		},
-		{
-			"type": "cargo",
-			"subcommand": "test",
-			"problemMatcher": [
-				"$rustc"
-			],
-			"group": "test",
-			"label": "Rust: cargo test - donetsk"
-		}
 	]
 }
