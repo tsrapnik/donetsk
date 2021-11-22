@@ -11,7 +11,7 @@
             "program": "${workspaceRoot}/target/debug/donetsk",
             "args": [],
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Rust: cargo build - donetsk",
+            "preLaunchTask": "rust: cargo build",
         },
         {
             "type": "lldb",
@@ -35,7 +35,7 @@
             "program": "${workspaceRoot}/target/debug/donetsk.exe",
             "args": [],
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Rust: cargo build - donetsk",
+            "preLaunchTask": "rust: cargo build",
         },
         {
             "type": "cppvsdbg",
@@ -43,7 +43,7 @@
             "name": "debug unit tests on windows",
             "args": [],
             "cwd": "${workspaceFolder}",
-        }
+        },
         {
             "type": "cppvsdbg",
             "request": "launch",
